@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 SUPER LEARNING BOT — Utility Modules
 =====================================
@@ -78,13 +79,13 @@ def generate_progress_card(user: dict, badges: list) -> io.BytesIO:
         ("🎯", "Streak",   f"{user.get('streak', 0)} days"),
         ("📚", "Lessons",  str(user.get("total_lessons", 0))),
         ("✅", "Accuracy", _accuracy(user)),
-        ("🌍", "Lang",     user.get("lang", "english").capitalize()),
+        ("🌍", "Lang",      user.get("lang", "english").capitalize()),
     ]
     sx = 40
     for icon, label, val in stats:
         draw.rectangle([sx, 210, sx + 145, 300], fill=(28, 28, 45))
         draw.rectangle([sx, 210, sx + 145, 214], fill=(99, 102, 241))
-        draw.text((sx + 10, 220), icon + " " + label, font=font_tiny,  fill=(156, 163, 175))
+        draw.text((sx + 10, 220), f"{icon} {label}", font=font_tiny,  fill=(156, 163, 175))
         draw.text((sx + 10, 243), val,                font=font_med,   fill=(255, 255, 255))
         sx += 160
 
@@ -120,7 +121,7 @@ def _accuracy(user: dict) -> str:
 # ─────────────────────────────────────────
 #  STATS CHART
 # ─────────────────────────────────────────
-def generate_stats_chart(xp_history: list[int]) -> io.BytesIO:
+def generate_stats_chart(xp_history: list) -> io.BytesIO:
     """Generate XP over time bar chart."""
     fig, ax = plt.subplots(figsize=(8, 4), facecolor="#12121e")
     ax.set_facecolor("#1a1a2e")
@@ -151,11 +152,12 @@ def generate_stats_chart(xp_history: list[int]) -> io.BytesIO:
 # ─────────────────────────────────────────
 #  TTS (Text-to-Speech) — FREE via gTTS
 # ─────────────────────────────────────────
-def generate_tts(text: str, lang_code: str = "en", cache_dir: str = "audio_cache") -> str | None:
+def generate_tts(text: str, lang_code: str = "en", cache_dir: str = "audio_cache") -> str:
     """Generate TTS audio file. Returns file path."""
     try:
         from gtts import gTTS
-        os.makedirs(cache_dir, exist_ok=True)
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir, exist_ok=True)
 
         # Cache by hash
         key  = hashlib.md5(f"{lang_code}:{text}".encode()).hexdigest()
@@ -186,15 +188,15 @@ def translate_text(text: str, target: str = "en", source: str = "auto") -> str:
 #  MOTIVATIONAL QUOTES
 # ─────────────────────────────────────────
 QUOTES = [
-    "💬 "The limits of my language mean the limits of my world." — Wittgenstein",
-    "💬 "Learning another language is like becoming another person." — Shiki",
-    "💬 "One language sets you in a corridor for life. Two languages open every door." — Searls",
-    "💬 "To have another language is to possess a second soul." — Charlemagne",
-    "💬 "Language is the road map of a culture." — Rita Mae Brown",
-    "💬 "You can never understand one language until you understand at least two." — Searls",
-    "💬 "Every language is a world. Without translation, we would inhabit parishes bordering on silence." — Steiner",
-    "💬 "If you talk to a man in a language he understands, that goes to his head. Talk to him in his language, that goes to his heart." — Mandela",
-    "💬 "The more languages you know, the more you are human." — Masaryk",
+    "💬 'The limits of my language mean the limits of my world.' — Wittgenstein",
+    "💬 'Learning another language is like becoming another person.' — Shiki",
+    "💬 'One language sets you in a corridor for life. Two languages open every door.' — Searls",
+    "💬 'To have another language is to possess a second soul.' — Charlemagne",
+    "💬 'Language is the road map of a culture.' — Rita Mae Brown",
+    "💬 'You can never understand one language until you understand at least two.' — Searls",
+    "💬 'Every language is a world. Without translation, we would inhabit parishes bordering on silence.' — Steiner",
+    "💬 'If you talk to a man in a language he understands, that goes to his head.' — Mandela",
+    "💬 'The more languages you know, the more you are human.' — Masaryk",
 ]
 
 def get_daily_quote() -> str:
@@ -204,14 +206,13 @@ def get_daily_quote() -> str:
 # ─────────────────────────────────────────
 #  RANDOM QUIZ GENERATOR
 # ─────────────────────────────────────────
-def build_vocab_quiz(word_list: list[dict], count: int = 5) -> list[dict]:
+def build_vocab_quiz(word_list: list, count: int = 5) -> list:
     """Build a multiple-choice quiz from a vocabulary list."""
     if len(word_list) < 4:
         return []
     questions = []
     random.shuffle(word_list)
     for i, item in enumerate(word_list[:count]):
-        # Wrong answers: pick 3 random meanings from other words
         distractors = [w["meaning"] for w in word_list if w["word"] != item["word"]]
         random.shuffle(distractors)
         opts = distractors[:3] + [item["meaning"]]
@@ -225,28 +226,22 @@ def build_vocab_quiz(word_list: list[dict], count: int = 5) -> list[dict]:
         })
     return questions
 
-def shuffle_quiz(questions: list[dict]) -> list[dict]:
+def shuffle_quiz(questions: list) -> list:
     q = questions.copy()
     random.shuffle(q)
     return q[:10]
 
 # ─────────────────────────────────────────
-#  GRAMMAR CORRECTION (rule-based, no AI)
+#  GRAMMAR CORRECTION
 # ─────────────────────────────────────────
 COMMON_ERRORS = [
-    (r"\bi are\b",           "I am",           "Use 'am' with 'I'"),
-    (r"\bhe are\b",          "he is",          "Use 'is' with 'he'"),
-    (r"\bshe are\b",         "she is",         "Use 'is' with 'she'"),
-    (r"\bthey is\b",         "they are",       "Use 'are' with 'they'"),
-    (r"\bwe is\b",           "we are",         "Use 'are' with 'we'"),
-    (r"\bgoes to school every\b", "goes to school every", "Correct!"),
-    (r"\bgo to school every\b",   "✏️ Consider: he/she GOES to school (3rd person -s)", "", ),
-    (r"\bdid not went\b",    "did not go",     "After 'did', use base form of verb"),
-    (r"\bmore better\b",     "better",         "Don't use 'more' with comparative adjectives"),
-    (r"\bmost fastest\b",    "fastest",        "Don't use 'most' with superlative adjectives"),
-    (r"\bi has\b",           "I have",         "Use 'have' with 'I'"),
-    (r"\bcan to\b",          "can",            "After modal verbs, no 'to'"),
-    (r"\bmusts\b",           "must",           "Modal verbs don't take -s"),
+    (r"\bi are\b", "I am", "Use 'am' with 'I'"),
+    (r"\bhe are\b", "he is", "Use 'is' with 'he'"),
+    (r"\bshe are\b", "she is", "Use 'is' with 'she'"),
+    (r"\bthey is\b", "they are", "Use 'are' with 'they'"),
+    (r"\bwe is\b", "we are", "Use 'are' with 'we'"),
+    (r"\bdid not went\b", "did not go", "After 'did', use base form of verb"),
+    (r"\bmore better\b", "better", "Don't use 'more' with comparative adjectives"),
 ]
 
 def grammar_check(sentence: str) -> str:
@@ -258,7 +253,7 @@ def grammar_check(sentence: str) -> str:
     for pattern, correction, tip in COMMON_ERRORS:
         if re.search(pattern, sentence, re.IGNORECASE):
             corrected = re.sub(pattern, correction, corrected, flags=re.IGNORECASE)
-            if tip and tip != "Correct!":
+            if tip:
                 feedback.append(f"📌 {tip}")
 
     result = f"📝 *Original:*\n_{original}_\n\n"
@@ -267,7 +262,7 @@ def grammar_check(sentence: str) -> str:
         if feedback:
             result += "💡 *Tips:*\n" + "\n".join(feedback)
     else:
-        result += "✅ *No obvious errors found!*\n\n💡 Keep writing and practicing — you're doing great! 🌟"
+        result += "✅ *No obvious errors found!*\n\n💡 Keep practicing! 🌟"
 
     return result
 
@@ -288,24 +283,10 @@ LISTENING_EXERCISES = [
         "question": "What platform does the train depart from?",
         "opts"  : ["Platform 1","Platform 2","Platform 3","Platform 4"],
         "ans"   : 2,
-    },
-    {
-        "lang"  : "korean",
-        "text"  : "저는 서울에 살아요. 매일 지하철로 회사에 가요.",
-        "question": "How does the speaker go to work?",
-        "opts"  : ["By bus","By car","By subway","By taxi"],
-        "ans"   : 2,
-    },
-    {
-        "lang"  : "japanese",
-        "text"  : "私は毎朝7時に起きます。それから朝ごはんを食べます。",
-        "question": "What time does the speaker wake up?",
-        "opts"  : ["6 AM","7 AM","8 AM","9 AM"],
-        "ans"   : 1,
-    },
+    }
 ]
 
-def get_listening_exercise(lang: str) -> dict | None:
+def get_listening_exercise(lang: str) -> dict:
     exercises = [e for e in LISTENING_EXERCISES if e["lang"] == lang]
     if not exercises:
         exercises = LISTENING_EXERCISES
