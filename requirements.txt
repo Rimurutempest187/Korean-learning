@@ -4,9 +4,6 @@
 # Telegram Bot Framework
 python-telegram-bot==20.7
 
-# Database
-sqlite3
-
 # AI and NLP
 openai==1.12.0
 anthropic==0.18.1
