@@ -1,23 +1,43 @@
-# bot.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SUPER LEARNING BOT - Universal Language Learning Telegram Bot
+Create by: PINLON-YOUTH
+"""
+
 import os
-import json
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Optional, Dict, List
+import json
 import random
-from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+
+from telegram import (
+    Update, 
+    InlineKeyboardButton, 
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove
+)
 from telegram.ext import (
     Application,
     CommandHandler,
-    ContextTypes,
     CallbackQueryHandler,
     MessageHandler,
+    ConversationHandler,
+    ContextTypes,
     filters
 )
+from telegram.constants import ParseMode
 
-# Load environment variables
-load_dotenv()
+# Database imports
+from database import Database
+from models import User, Lesson, Vocabulary, Quiz, Progress
+from ai_tutor import AITutor
+from content_manager import ContentManager
+from gamification import GamificationEngine
+from progress_card import ProgressCardGenerator
+from scheduler import DailyScheduler
 
 # Configure logging
 logging.basicConfig(
@@ -26,854 +46,699 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Database file paths
-DB_USERS = "data/users.json"
-DB_LESSONS = "data/lessons.json"
-DB_VOCAB = "data/vocab.json"
-DB_QUIZ = "data/quiz.json"
-DB_SETTINGS = "data/settings.json"
-DB_TUTORS = "data/tutors.json"
+# Conversation states
+SELECTING_LANGUAGE, LEVEL_TEST, GOAL_SETTING = range(3)
 
-# Admin IDs (comma-separated in .env)
-ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
+# Available languages
+AVAILABLE_LANGUAGES = {
+    'en': '🇺🇸 English',
+    'ko': '🇰🇷 Korean',
+    'ja': '🇯🇵 Japanese',
+    'zh': '🇨🇳 Chinese',
+    'es': '🇪🇸 Spanish',
+    'fr': '🇫🇷 French',
+    'de': '🇩🇪 German',
+    'th': '🇹🇭 Thai',
+    'my': '🇲🇲 Myanmar'
+}
 
-# ==================== Database Helper Functions ====================
+# Proficiency levels
+LEVELS = ['Beginner', 'Elementary', 'Intermediate', 'Upper-Intermediate', 'Advanced']
 
-def ensure_data_dir():
-    """Create data directory if not exists"""
-    os.makedirs("data", exist_ok=True)
+# Initialize components
+db = Database()
+ai_tutor = AITutor()
+content_manager = ContentManager()
+gamification = GamificationEngine()
+progress_card_gen = ProgressCardGenerator()
+scheduler = DailyScheduler()
 
-def load_json(filepath: str, default=None) -> dict:
-    """Load JSON file"""
-    ensure_data_dir()
-    if default is None:
-        default = {}
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return default
 
-def save_json(filepath: str, data: dict):
-    """Save JSON file"""
-    ensure_data_dir()
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def get_user_data(user_id: int) -> dict:
-    """Get user data"""
-    users = load_json(DB_USERS, {})
-    user_key = str(user_id)
-    if user_key not in users:
-        users[user_key] = {
-            "user_id": user_id,
-            "streak": 0,
-            "last_active": "",
-            "completed_lessons": [],
-            "quiz_scores": [],
-            "total_score": 0,
-            "role": "user",
-            "progress": {}
-        }
-        save_json(DB_USERS, users)
-    return users[user_key]
-
-def save_user_data(user_id: int, data: dict):
-    """Save user data"""
-    users = load_json(DB_USERS, {})
-    users[str(user_id)] = data
-    save_json(DB_USERS, users)
-
-def update_streak(user_id: int):
-    """Update user's daily streak"""
-    user = get_user_data(user_id)
-    today = datetime.now().strftime("%Y-%m-%d")
+class SuperLearningBot:
+    """Main bot class"""
     
-    if user["last_active"] == today:
-        return user["streak"]
-    
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    if user["last_active"] == yesterday:
-        user["streak"] += 1
-    else:
-        user["streak"] = 1
-    
-    user["last_active"] = today
-    save_user_data(user_id, user)
-    return user["streak"]
-
-def is_admin(user_id: int) -> bool:
-    """Check if user is admin"""
-    if user_id in ADMIN_IDS:
-        return True
-    user = get_user_data(user_id)
-    return user.get("role") in ["admin", "tutor"]
-
-# ==================== User Commands ====================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
-    user = update.effective_user
-    user_id = user.id
-    
-    # Initialize user
-    get_user_data(user_id)
-    
-    welcome_msg = f"""
-🇰🇷 <b>ကိုရီးယားဘာသာစကား သင်ကြားရေး Bot မှ ကြိုဆိုပါတယ်!</b>
-
-မင်္ဂလာပါ {user.first_name}! 👋
-
-<b>📚 အသုံးပြုနည်း:</b>
-
-<b>သင်ယူရေး Commands:</b>
-/lesson - သင်ခန်းစာများ ကြည့်ရန်
-/vocab - နေ့စဉ် vocabulary
-/flashcard - Flashcard လေ့ကျင့်ရန်
-/quiz - Quiz ဖြေဆိုရန်
-/practice - စကားပြောလေ့ကျင့်ရန်
-/pronounce <text> - အသံထွက် နားထောင်ရန်
-/translate <text> - ဘာသာပြန်ရန်
-
-<b>တိုးတက်မှု Commands:</b>
-/streak - နေ့စဉ်သင်ယူမှု streak
-/progress - သင်၏တိုးတက်မှု
-
-<b>အခြား Commands:</b>
-/homework - Homework တင်ရန်
-/report - အကြံပြုချက်ပို့ရန်
-
-စတင်သင်ယူလိုက်ပါ! 🚀
-
-<i>Create by: PINLON-YOUTH</i>
-"""
-    
-    await update.message.reply_text(welcome_msg, parse_mode="HTML")
-
-async def lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /lesson command"""
-    args = context.args
-    lessons = load_json(DB_LESSONS, {"lessons": []})
-    
-    if not args or args[0] == "list":
-        if not lessons["lessons"]:
-            await update.message.reply_text("📚 သင်ခန်းစာများ မရှိသေးပါ။")
-            return
+    def __init__(self):
+        self.db = db
+        self.ai_tutor = ai_tutor
+        self.content_manager = content_manager
+        self.gamification = gamification
         
-        msg = "<b>📚 ရရှိနိုင်သော သင်ခန်းစာများ:</b>\n\n"
-        for lesson in lessons["lessons"]:
-            msg += f"🔹 <code>{lesson['id']}</code> - {lesson['title']}\n"
-        msg += f"\n<i>အသုံးပြုပုံ: /startlesson &lt;lesson_id&gt;</i>"
+    # ==================== MAIN MENU ====================
+    
+    def get_main_menu_keyboard(self, user_id: int) -> ReplyKeyboardMarkup:
+        """Generate main menu keyboard"""
+        keyboard = [
+            ['📚 Learn', '🧠 Review'],
+            ['💬 AI Tutor', '📊 Progress'],
+            ['🎯 Quiz', '📖 Vocabulary'],
+            ['⚙️ Settings', '❓ Help']
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /start command - Onboarding"""
+        user_id = update.effective_user.id
+        username = update.effective_user.first_name
         
-        await update.message.reply_text(msg, parse_mode="HTML")
-    else:
-        lesson_id = args[0]
-        lesson_data = next((l for l in lessons["lessons"] if l["id"] == lesson_id), None)
+        # Check if user exists
+        user = self.db.get_user(user_id)
         
-        if lesson_data:
-            msg = f"<b>📖 {lesson_data['title']}</b>\n\n{lesson_data.get('content', 'သင်ခန်းစာအကြောင်းအရာ မရှိသေးပါ။')}"
-            await update.message.reply_text(msg, parse_mode="HTML")
-        else:
-            await update.message.reply_text(f"❌ သင်ခန်းစာ '{lesson_id}' မတွေ့ပါ။")
-
-async def startlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /startlesson command"""
-    if not context.args:
-        await update.message.reply_text("❌ အသုံးပြုပုံ: /startlesson <lesson_id>")
-        return
-    
-    lesson_id = context.args[0]
-    lessons = load_json(DB_LESSONS, {"lessons": []})
-    lesson_data = next((l for l in lessons["lessons"] if l["id"] == lesson_id), None)
-    
-    if not lesson_data:
-        await update.message.reply_text(f"❌ သင်ခန်းစာ '{lesson_id}' မတွေ့ပါ။")
-        return
-    
-    user_id = update.effective_user.id
-    user = get_user_data(user_id)
-    
-    msg = f"<b>🎓 သင်ခန်းစာ: {lesson_data['title']}</b>\n\n"
-    msg += f"{lesson_data.get('content', '')}\n\n"
-    
-    if "audio" in lesson_data:
-        msg += f"🔊 Audio: {lesson_data['audio']}\n"
-    
-    msg += f"\n✅ သင်ခန်းစာ စတင်ပြီးပါပြီ!"
-    
-    # Mark as completed
-    if lesson_id not in user["completed_lessons"]:
-        user["completed_lessons"].append(lesson_id)
-        save_user_data(user_id, user)
-    
-    update_streak(user_id)
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def vocab(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /vocab command"""
-    vocab_data = load_json(DB_VOCAB, {"words": []})
-    
-    if not vocab_data["words"]:
-        await update.message.reply_text("📖 Vocabulary မရှိသေးပါ။")
-        return
-    
-    args = context.args
-    
-    if args and args[0] == "today":
-        # Show today's vocab
-        today_words = [w for w in vocab_data["words"] if w.get("daily", False)]
-        if not today_words:
-            today_words = random.sample(vocab_data["words"], min(5, len(vocab_data["words"])))
-    else:
-        # Random vocab
-        today_words = random.sample(vocab_data["words"], min(5, len(vocab_data["words"])))
-    
-    msg = "<b>📖 ယနေ့ Vocabulary:</b>\n\n"
-    for i, word in enumerate(today_words, 1):
-        msg += f"{i}. <b>{word['word']}</b>\n"
-        msg += f"   အဓိပ္పာယ်: {word['meaning']}\n"
-        if "example" in word:
-            msg += f"   ဥပမာ: {word['example']}\n"
-        msg += "\n"
-    
-    update_streak(update.effective_user.id)
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def flashcard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /flashcard command"""
-    vocab_data = load_json(DB_VOCAB, {"words": []})
-    
-    if not vocab_data["words"]:
-        await update.message.reply_text("📖 Vocabulary မရှိသေးပါ။")
-        return
-    
-    word = random.choice(vocab_data["words"])
-    
-    keyboard = [
-        [InlineKeyboardButton("📖 အဓိပ္பာယ် ပြရန်", callback_data=f"flashcard_show_{word['word']}")],
-        [InlineKeyboardButton("➡️ နောက်တစ်ခု", callback_data="flashcard_next")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    msg = f"<b>🎴 Flashcard:</b>\n\n<b>{word['word']}</b>"
-    
-    await update.message.reply_text(msg, parse_mode="HTML", reply_markup=reply_markup)
-
-async def flashcard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle flashcard button callbacks"""
-    query = update.callback_query
-    await query.answer()
-    
-    vocab_data = load_json(DB_VOCAB, {"words": []})
-    
-    if query.data.startswith("flashcard_show_"):
-        word_text = query.data.replace("flashcard_show_", "")
-        word = next((w for w in vocab_data["words"] if w["word"] == word_text), None)
-        
-        if word:
-            msg = f"<b>🎴 Flashcard:</b>\n\n<b>{word['word']}</b>\n\n"
-            msg += f"📖 အဓိပ္ပာယ်: {word['meaning']}\n"
-            if "example" in word:
-                msg += f"ဥပမာ: {word['example']}"
-            
-            keyboard = [[InlineKeyboardButton("➡️ နောက်တစ်ခု", callback_data="flashcard_next")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(msg, parse_mode="HTML", reply_markup=reply_markup)
-    
-    elif query.data == "flashcard_next":
-        if vocab_data["words"]:
-            word = random.choice(vocab_data["words"])
-            keyboard = [
-                [InlineKeyboardButton("📖 အဓိပ္ပာယ် ပြရန်", callback_data=f"flashcard_show_{word['word']}")],
-                [InlineKeyboardButton("➡️ နောက်တစ်ခု", callback_data="flashcard_next")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            msg = f"<b>🎴 Flashcard:</b>\n\n<b>{word['word']}</b>"
-            await query.edit_message_text(msg, parse_mode="HTML", reply_markup=reply_markup)
-
-async def pronounce(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /pronounce command"""
-    if not context.args:
-        await update.message.reply_text("❌ အသုံးပြုပုံ: /pronounce <Korean text>")
-        return
-    
-    text = " ".join(context.args)
-    
-    msg = f"🔊 <b>အသံထွက်:</b> {text}\n\n"
-    msg += "⚠️ TTS feature လိုအပ်ပါတယ်။ Pronunciation guide:\n"
-    msg += f"<code>{text}</code>\n\n"
-    msg += "<i>Note: Real TTS integration လိုအပ်ပါတယ် (e.g., Google TTS API)</i>"
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /translate command"""
-    if not context.args:
-        await update.message.reply_text("❌ အသုံးပြုပုံ: /translate <text>")
-        return
-    
-    text = " ".join(context.args)
-    
-    # Simple translation simulation (you'd integrate real translation API)
-    translations = {
-        "hello": "안녕하세요",
-        "thank you": "감사합니다",
-        "i love korean": "나는 한국어를 사랑해요",
-        "goodbye": "안녕히 가세요"
-    }
-    
-    result = translations.get(text.lower(), "")
-    
-    if result:
-        msg = f"🌐 <b>ဘာသာပြန်:</b>\n\n{text} ➡️ {result}"
-    else:
-        msg = f"🌐 <b>ဘာသာပြန်:</b>\n\n⚠️ Translation API integration လိုအပ်ပါတယ်။\n\nရိုက်ထည့်ခဲ့သည်: {text}"
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /quiz command"""
-    quiz_data = load_json(DB_QUIZ, {"quizzes": []})
-    
-    if not quiz_data["quizzes"]:
-        await update.message.reply_text("❓ Quiz မရှိသေးပါ။")
-        return
-    
-    question = random.choice(quiz_data["quizzes"])
-    
-    keyboard = [
-        [InlineKeyboardButton(f"A. {question['A']}", callback_data=f"quiz_{question['id']}_A")],
-        [InlineKeyboardButton(f"B. {question['B']}", callback_data=f"quiz_{question['id']}_B")],
-        [InlineKeyboardButton(f"C. {question['C']}", callback_data=f"quiz_{question['id']}_C")],
-        [InlineKeyboardButton(f"D. {question['D']}", callback_data=f"quiz_{question['id']}_D")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    msg = f"<b>❓ Quiz:</b>\n\n{question['question']}"
-    
-    await update.message.reply_text(msg, parse_mode="HTML", reply_markup=reply_markup)
-    
-    update_streak(update.effective_user.id)
-
-async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle quiz answer callbacks"""
-    query = update.callback_query
-    await query.answer()
-    
-    quiz_data = load_json(DB_QUIZ, {"quizzes": []})
-    
-    parts = query.data.split("_")
-    quiz_id = parts[1]
-    answer = parts[2]
-    
-    question = next((q for q in quiz_data["quizzes"] if q["id"] == quiz_id), None)
-    
-    if not question:
-        await query.edit_message_text("❌ Quiz မတွေ့ပါ။")
-        return
-    
-    user_id = query.from_user.id
-    user = get_user_data(user_id)
-    
-    if answer == question["correct"]:
-        result = "✅ မှန်ကန်ပါတယ်!"
-        user["quiz_scores"].append(1)
-        user["total_score"] += 1
-    else:
-        result = f"❌ မှားပါတယ်။ မှန်ကန်သောအဖြေ: {question['correct']}"
-        user["quiz_scores"].append(0)
-    
-    save_user_data(user_id, user)
-    
-    msg = f"<b>❓ Quiz:</b>\n\n{question['question']}\n\n{result}\n\n"
-    msg += f"<b>သင်၏ စုစုပေါင်း Score:</b> {user['total_score']}"
-    
-    await query.edit_message_text(msg, parse_mode="HTML")
-
-async def streak(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /streak command"""
-    user_id = update.effective_user.id
-    current_streak = update_streak(user_id)
-    user = get_user_data(user_id)
-    
-    msg = f"<b>🔥 သင်၏ Learning Streak:</b>\n\n"
-    msg += f"🔥 လက်ရှိ Streak: <b>{current_streak}</b> နေ့\n"
-    msg += f"📅 နောက်ဆုံးသင်ယူသည့်နေ့: {user['last_active']}\n\n"
-    msg += "💪 ဆက်လက်ကြိုးစားပါ!"
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /progress command"""
-    user_id = update.effective_user.id
-    user = get_user_data(user_id)
-    
-    total_lessons = len(user["completed_lessons"])
-    total_quizzes = len(user["quiz_scores"])
-    correct_answers = sum(user["quiz_scores"])
-    accuracy = (correct_answers / total_quizzes * 100) if total_quizzes > 0 else 0
-    
-    msg = f"<b>📊 သင်၏တိုးတက်မှု:</b>\n\n"
-    msg += f"📚 ပြီးမြောက်ပြီးသော သင်ခန်းစာ: <b>{total_lessons}</b>\n"
-    msg += f"❓ Quiz ဖြေဆိုခဲ့သည်: <b>{total_quizzes}</b>\n"
-    msg += f"✅ မှန်ကန်သောအဖြေ: <b>{correct_answers}</b>\n"
-    msg += f"📈 တိကျမှု: <b>{accuracy:.1f}%</b>\n"
-    msg += f"⭐ စုစုပေါင်း Score: <b>{user['total_score']}</b>\n"
-    msg += f"🔥 Streak: <b>{user['streak']}</b> နေ့\n\n"
-    msg += "🎯 ဆက်လက်တိုးတက်ပါစေ!"
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def practice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /practice command"""
-    scenarios = [
-        {
-            "name": "ordering_coffee",
-            "question": "☕ ကော်ဖီဆိုင်မှာ: ကော်ဖီ မှာယူချင်ရင် ဘယ်လိုပြောမလဲ?",
-            "example": "아이스 아메리카노 한 잔 주세요 (Ice Americano တစ်ခွက်ပေးပါ)"
-        },
-        {
-            "name": "greeting",
-            "question": "👋 နှုတ်ဆက်ခြင်း: မနက်ခင်းစာ မှာဘယ်လိုနှုတ်ဆက်မလဲ?",
-            "example": "좋은 아침입니다 (ကောင်းသော မနက်ခင်းပါ)"
-        },
-        {
-            "name": "shopping",
-            "question": "🛍️ ဈေးဝယ်ခြင်း: ဈေးဘယ်လောက်လဲ လို့ ဘယ်လိုမေးမလဲ?",
-            "example": "이거 얼마예요? (ဒါ ဘယ်လောက်လဲ?)"
-        }
-    ]
-    
-    scenario = random.choice(scenarios)
-    
-    msg = f"<b>💬 စကားပြောလေ့ကျင့်ခန်း:</b>\n\n"
-    msg += f"{scenario['question']}\n\n"
-    msg += f"<b>ဥပမာအဖြေ:</b>\n{scenario['example']}\n\n"
-    msg += "📝 သင့်အဖြေကို ရိုက်ထည့်ကြည့်ပါ!"
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def homework(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /homework command"""
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
-    
-    if not context.args:
-        msg = "📝 <b>Homework တင်ရန်:</b>\n\n"
-        msg += "အသုံးပြုပုံ:\n"
-        msg += "/homework <သင့် homework အကြောင်းအရာ>\n\n"
-        msg += "သို့မဟုတ် file တစ်ခုကို attach လုပ်ပြီး caption မှာ /homework လို့ရိုက်ထည့်ပါ။"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    homework_text = " ".join(context.args)
-    
-    # Save to admin notifications (in real implementation)
-    msg = f"✅ သင့် homework ကို တင်သွင်းပြီးပါပြီ!\n\n"
-    msg += f"📄 အကြောင်းအရာ: {homework_text}\n\n"
-    msg += "👨‍🏫 Tutor များက မကြာမီ စစ်ဆေးပေးပါလိမ့်မည်။"
-    
-    # Notify admins
-    for admin_id in ADMIN_IDS:
-        try:
-            admin_msg = f"📨 <b>Homework အသစ်:</b>\n\n"
-            admin_msg += f"👤 User: {user_name} (ID: {user_id})\n"
-            admin_msg += f"📄 {homework_text}"
-            await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode="HTML")
-        except:
-            pass
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /report command"""
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
-    
-    if not context.args:
-        await update.message.reply_text("❌ အသုံးပြုပုံ: /report <သင့်အကြံပြုချက် သို့မဟုတ် ပြဿနာ>")
-        return
-    
-    report_text = " ".join(context.args)
-    
-    # Notify admins
-    for admin_id in ADMIN_IDS:
-        try:
-            admin_msg = f"📢 <b>Report အသစ်:</b>\n\n"
-            admin_msg += f"👤 User: {user_name} (ID: {user_id})\n"
-            admin_msg += f"📄 {report_text}"
-            await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode="HTML")
-        except:
-            pass
-    
-    await update.message.reply_text("✅ သင့် report ကို ပို့ပြီးပါပြီ။ ကျေးဇူးတင်ပါတယ်! 🙏")
-
-# ==================== Admin Commands ====================
-
-async def admin_only(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Decorator to check admin access"""
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("❌ ဤ command ကို admin များသာ အသုံးပြုနိုင်ပါသည်။")
-        return False
-    return True
-
-async def edlesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /edlesson command"""
-    if not await admin_only(update, context):
-        return
-    
-    if not context.args:
-        msg = "📚 <b>Lesson စီမံခန့်ခွဲရန်:</b>\n\n"
-        msg += "အသုံးပြုပုံ:\n"
-        msg += "/edlesson add|lesson_id|title|content\n"
-        msg += "/edlesson edit|lesson_id|title|content\n"
-        msg += "/edlesson delete|lesson_id\n"
-        msg += "/edlesson list"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    lessons = load_json(DB_LESSONS, {"lessons": []})
-    
-    if context.args[0] == "list":
-        if not lessons["lessons"]:
-            await update.message.reply_text("📚 Lesson များ မရှိသေးပါ။")
-            return
-        
-        msg = "<b>📚 Lesson စာရင်း:</b>\n\n"
-        for lesson in lessons["lessons"]:
-            msg += f"🔹 {lesson['id']} - {lesson['title']}\n"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    parts = " ".join(context.args).split("|")
-    
-    if len(parts) < 2:
-        await update.message.reply_text("❌ Format မှားနေပါသည်။")
-        return
-    
-    action = parts[0].strip()
-    
-    if action == "add":
-        if len(parts) < 4:
-            await update.message.reply_text("❌ Format: /edlesson add|lesson_id|title|content")
-            return
-        
-        lesson_id = parts[1].strip()
-        title = parts[2].strip()
-        content = parts[3].strip()
-        
-        lessons["lessons"].append({
-            "id": lesson_id,
-            "title": title,
-            "content": content
-        })
-        save_json(DB_LESSONS, lessons)
-        await update.message.reply_text(f"✅ Lesson '{lesson_id}' ထည့်သွင်းပြီးပါပြီ!")
-    
-    elif action == "delete":
-        lesson_id = parts[1].strip()
-        lessons["lessons"] = [l for l in lessons["lessons"] if l["id"] != lesson_id]
-        save_json(DB_LESSONS, lessons)
-        await update.message.reply_text(f"✅ Lesson '{lesson_id}' ဖျက်ပြီးပါပြီ!")
-
-async def edvocab(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /edvocab command"""
-    if not await admin_only(update, context):
-        return
-    
-    if not context.args:
-        msg = "📖 <b>Vocabulary စီမံခန့်ခွဲရန်:</b>\n\n"
-        msg += "အသုံးပြုပုံ:\n"
-        msg += "/edvocab add|word|meaning|example\n"
-        msg += "/edvocab delete|word\n"
-        msg += "/edvocab list"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    vocab_data = load_json(DB_VOCAB, {"words": []})
-    
-    if context.args[0] == "list":
-        if not vocab_data["words"]:
-            await update.message.reply_text("📖 Vocabulary မရှိသေးပါ။")
-            return
-        
-        msg = "<b>📖 Vocabulary စာရင်း:</b>\n\n"
-        for word in vocab_data["words"][:20]:  # Show first 20
-            msg += f"🔹 {word['word']} - {word['meaning']}\n"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    parts = " ".join(context.args).split("|")
-    
-    if len(parts) < 2:
-        await update.message.reply_text("❌ Format မှားနေပါသည်။")
-        return
-    
-    action = parts[0].strip()
-    
-    if action == "add":
-        if len(parts) < 3:
-            await update.message.reply_text("❌ Format: /edvocab add|word|meaning|example")
-            return
-        
-        word = parts[1].strip()
-        meaning = parts[2].strip()
-        example = parts[3].strip() if len(parts) > 3 else ""
-        
-        vocab_data["words"].append({
-            "word": word,
-            "meaning": meaning,
-            "example": example
-        })
-        save_json(DB_VOCAB, vocab_data)
-        await update.message.reply_text(f"✅ Vocabulary '{word}' ထည့်သွင်းပြီးပါပြီ!")
-    
-    elif action == "delete":
-        word = parts[1].strip()
-        vocab_data["words"] = [w for w in vocab_data["words"] if w["word"] != word]
-        save_json(DB_VOCAB, vocab_data)
-        await update.message.reply_text(f"✅ Vocabulary '{word}' ဖျက်ပြီးပါပြီ!")
-
-async def edquiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /edquiz command"""
-    if not await admin_only(update, context):
-        return
-    
-    if not context.args:
-        msg = "❓ <b>Quiz စီမံခန့်ခွဲရန်:</b>\n\n"
-        msg += "အသုံးပြုပုံ:\n"
-        msg += "/edquiz add|topic|question|A|B|C|D|correct\n"
-        msg += "/edquiz list"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    quiz_data = load_json(DB_QUIZ, {"quizzes": []})
-    
-    if context.args[0] == "list":
-        if not quiz_data["quizzes"]:
-            await update.message.reply_text("❓ Quiz များ မရှိသေးပါ။")
-            return
-        
-        msg = "<b>❓ Quiz စာရင်း:</b>\n\n"
-        for quiz in quiz_data["quizzes"][:10]:
-            msg += f"🔹 {quiz['id']}: {quiz['question']}\n"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    parts = " ".join(context.args).split("|")
-    
-    if parts[0].strip() == "add":
-        if len(parts) < 8:
-            await update.message.reply_text("❌ Format: /edquiz add|topic|question|A|B|C|D|correct")
-            return
-        
-        quiz_id = f"q{len(quiz_data['quizzes']) + 1}"
-        
-        quiz_data["quizzes"].append({
-            "id": quiz_id,
-            "topic": parts[1].strip(),
-            "question": parts[2].strip(),
-            "A": parts[3].strip(),
-            "B": parts[4].strip(),
-            "C": parts[5].strip(),
-            "D": parts[6].strip(),
-            "correct": parts[7].strip()
-        })
-        save_json(DB_QUIZ, quiz_data)
-        await update.message.reply_text(f"✅ Quiz '{quiz_id}' ထည့်သွင်းပြီးပါပြီ!")
-
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /broadcast command"""
-    if not await admin_only(update, context):
-        return
-    
-    if not context.args:
-        await update.message.reply_text("❌ အသုံးပြုပုံ: /broadcast <message>")
-        return
-    
-    message = " ".join(context.args)
-    users = load_json(DB_USERS, {})
-    
-    sent = 0
-    failed = 0
-    
-    for user_id in users.keys():
-        try:
-            await context.bot.send_message(
-                chat_id=int(user_id),
-                text=f"📢 <b>Announcement:</b>\n\n{message}",
-                parse_mode="HTML"
+        if user:
+            # Returning user
+            await update.message.reply_text(
+                f"Welcome back, {username}! 🎉\n\n"
+                f"Ready to continue your learning journey?\n"
+                f"Current streak: {user['streak']} days 🔥",
+                reply_markup=self.get_main_menu_keyboard(user_id)
             )
-            sent += 1
-        except:
-            failed += 1
+        else:
+            # New user - Start onboarding
+            welcome_text = (
+                "🌍 *SUPER LEARNING BOT*\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "Welcome to your personal language learning assistant! 🚀\n\n"
+                "I'll help you:\n"
+                "✅ Learn languages effectively\n"
+                "✅ Practice daily with AI tutor\n"
+                "✅ Track your progress\n"
+                "✅ Achieve your goals\n\n"
+                "Let's start by choosing your learning language:\n\n"
+                "_Create by: PINLON-YOUTH_"
+            )
+            
+            # Language selection keyboard
+            keyboard = []
+            lang_items = list(AVAILABLE_LANGUAGES.items())
+            for i in range(0, len(lang_items), 2):
+                row = []
+                for j in range(2):
+                    if i + j < len(lang_items):
+                        code, name = lang_items[i + j]
+                        row.append(InlineKeyboardButton(name, callback_data=f"lang_{code}"))
+                keyboard.append(row)
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                welcome_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+            return SELECTING_LANGUAGE
     
-    await update.message.reply_text(f"✅ Broadcast ပို့ပြီးပါပြီ!\n\n✅ ပို့ပြီး: {sent}\n❌ မအောင်မြင်: {failed}")
-
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /stats command"""
-    if not await admin_only(update, context):
-        return
+    async def language_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle language selection"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        username = query.from_user.first_name
+        lang_code = query.data.split('_')[1]
+        
+        # Save to context
+        context.user_data['learning_language'] = lang_code
+        
+        # Ask for level
+        level_text = (
+            f"Great choice! You're learning {AVAILABLE_LANGUAGES[lang_code]} 🎯\n\n"
+            "What's your current level?"
+        )
+        
+        keyboard = []
+        for level in LEVELS:
+            keyboard.append([InlineKeyboardButton(level, callback_data=f"level_{level}")])
+        keyboard.append([InlineKeyboardButton("📝 Take Level Test", callback_data="level_test")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            level_text,
+            reply_markup=reply_markup
+        )
+        
+        return LEVEL_TEST
     
-    users = load_json(DB_USERS, {})
-    lessons = load_json(DB_LESSONS, {"lessons": []})
-    vocab = load_json(DB_VOCAB, {"words": []})
-    quizzes = load_json(DB_QUIZ, {"quizzes": []})
+    async def level_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle level selection"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        data = query.data
+        
+        if data == "level_test":
+            # Start level test
+            await query.edit_message_text("📝 Level test feature coming soon!")
+            level = "Beginner"
+        else:
+            level = data.split('_')[1]
+        
+        context.user_data['level'] = level
+        
+        # Ask for daily goal
+        goal_text = (
+            "Perfect! 🎯\n\n"
+            "How much time can you dedicate daily?"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("5 minutes", callback_data="goal_5")],
+            [InlineKeyboardButton("10 minutes", callback_data="goal_10")],
+            [InlineKeyboardButton("20 minutes", callback_data="goal_20")],
+            [InlineKeyboardButton("30 minutes", callback_data="goal_30")],
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            goal_text,
+            reply_markup=reply_markup
+        )
+        
+        return GOAL_SETTING
     
-    total_users = len(users)
-    total_lessons = len(lessons["lessons"])
-    total_vocab = len(vocab["words"])
-    total_quizzes = len(quizzes["quizzes"])
+    async def goal_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle goal setting and complete onboarding"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        username = query.from_user.first_name
+        goal_minutes = int(query.data.split('_')[1])
+        
+        # Create user in database
+        user_data = {
+            'user_id': user_id,
+            'username': username,
+            'learning_language': context.user_data['learning_language'],
+            'level': context.user_data['level'],
+            'daily_goal_minutes': goal_minutes,
+            'xp': 0,
+            'streak': 0,
+            'total_lessons': 0
+        }
+        
+        self.db.create_user(user_data)
+        
+        # Send welcome message
+        welcome_complete = (
+            "🎉 *Setup Complete!*\n\n"
+            f"Learning: {AVAILABLE_LANGUAGES[context.user_data['learning_language']]}\n"
+            f"Level: {context.user_data['level']}\n"
+            f"Daily Goal: {goal_minutes} minutes\n\n"
+            "🚀 You're all set! Let's start learning!\n\n"
+            "Use the menu below to navigate:\n"
+            "📚 Learn - Start today's lesson\n"
+            "🧠 Review - Review previous content\n"
+            "💬 AI Tutor - Practice conversation\n"
+            "📊 Progress - Check your stats\n\n"
+            "_Create by: PINLON-YOUTH_"
+        )
+        
+        await query.edit_message_text(
+            welcome_complete,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="Choose an option:",
+            reply_markup=self.get_main_menu_keyboard(user_id)
+        )
+        
+        return ConversationHandler.END
     
-    # Active users (last 7 days)
-    active_users = 0
-    seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-    for user in users.values():
-        if user.get("last_active", "") >= seven_days_ago:
-            active_users += 1
+    # ==================== USER COMMANDS ====================
     
-    # Top learners
-    top_users = sorted(users.values(), key=lambda x: x.get("total_score", 0), reverse=True)[:5]
-    
-    msg = "<b>📊 Bot Statistics:</b>\n\n"
-    msg += f"👥 စုစုပေါင်း Users: {total_users}\n"
-    msg += f"✅ Active Users (7 days): {active_users}\n"
-    msg += f"📚 Lessons: {total_lessons}\n"
-    msg += f"📖 Vocabulary: {total_vocab}\n"
-    msg += f"❓ Quizzes: {total_quizzes}\n\n"
-    
-    msg += "<b>🏆 Top Learners:</b>\n"
-    for i, user in enumerate(top_users, 1):
-        msg += f"{i}. User {user['user_id']} - Score: {user['total_score']}\n"
-    
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /backup command"""
-    if not await admin_only(update, context):
-        return
-    
-    import shutil
-    import zipfile
-    from datetime import datetime
-    
-    backup_name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-    
-    with zipfile.ZipFile(backup_name, 'w') as zipf:
-        for file in [DB_USERS, DB_LESSONS, DB_VOCAB, DB_QUIZ, DB_SETTINGS, DB_TUTORS]:
-            if os.path.exists(file):
-                zipf.write(file)
-    
-    await update.message.reply_document(
-        document=open(backup_name, 'rb'),
-        filename=backup_name,
-        caption="✅ Backup ပြီးပါပြီ!"
-    )
-    
-    os.remove(backup_name)
-
-async def roles(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /roles command"""
-    if not await admin_only(update, context):
-        return
-    
-    if not context.args or len(context.args) < 2:
-        msg = "👥 <b>Role စီမံခန့်ခွဲရန်:</b>\n\n"
-        msg += "အသုံးပြုပုံ:\n"
-        msg += "/roles set <user_id> <role>\n"
-        msg += "/roles remove <user_id>\n"
-        msg += "/roles list\n\n"
-        msg += "Roles: user, tutor, admin"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    action = context.args[0]
-    
-    if action == "list":
-        users = load_json(DB_USERS, {})
-        msg = "<b>👥 User Roles:</b>\n\n"
-        for user_id, user_data in users.items():
-            role = user_data.get("role", "user")
-            if role != "user":
-                msg += f"👤 {user_id}: {role}\n"
-        await update.message.reply_text(msg, parse_mode="HTML")
-        return
-    
-    if len(context.args) < 2:
-        await update.message.reply_text("❌ Format မှားနေပါသည်။")
-        return
-    
-    target_user_id = int(context.args[1])
-    
-    if action == "set":
-        if len(context.args) < 3:
-            await update.message.reply_text("❌ အသုံးပြုပုံ: /roles set <user_id> <role>")
+    async def lang_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /lang command - Change learning language"""
+        user_id = update.effective_user.id
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("Please use /start first!")
             return
         
-        role = context.args[2]
-        if role not in ["user", "tutor", "admin"]:
-            await update.message.reply_text("❌ Role သည် user, tutor, သို့မဟုတ် admin ဖြစ်ရမည်။")
+        # Show current language and options
+        current_lang = user['learning_language']
+        text = f"Current learning language: {AVAILABLE_LANGUAGES.get(current_lang, 'Unknown')}\n\nSelect new language:"
+        
+        keyboard = []
+        lang_items = list(AVAILABLE_LANGUAGES.items())
+        for i in range(0, len(lang_items), 2):
+            row = []
+            for j in range(2):
+                if i + j < len(lang_items):
+                    code, name = lang_items[i + j]
+                    row.append(InlineKeyboardButton(name, callback_data=f"changelang_{code}"))
+            keyboard.append(row)
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(text, reply_markup=reply_markup)
+    
+    async def profile_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /profile command - Show user profile"""
+        user_id = update.effective_user.id
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("Please use /start first!")
             return
         
-        user = get_user_data(target_user_id)
-        user["role"] = role
-        save_user_data(target_user_id, user)
-        await update.message.reply_text(f"✅ User {target_user_id} ကို {role} အဖြစ် သတ်မှတ်ပြီးပါပြီ!")
+        # Get user stats
+        stats = self.db.get_user_stats(user_id)
+        
+        profile_text = (
+            f"👤 *Your Profile*\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📚 Language: {AVAILABLE_LANGUAGES.get(user['learning_language'], 'Unknown')}\n"
+            f"📊 Level: {user['level']}\n"
+            f"⭐ XP: {user['xp']}\n"
+            f"🔥 Streak: {user['streak']} days\n"
+            f"📖 Lessons Completed: {user['total_lessons']}\n"
+            f"🎯 Accuracy: {stats['accuracy']}%\n"
+            f"🏆 Badges: {stats['badge_count']}\n\n"
+            f"_Keep learning to unlock more achievements!_"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("📊 Detailed Stats", callback_data="detailed_stats")],
+            [InlineKeyboardButton("🏆 Badges", callback_data="show_badges")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            profile_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
     
-    elif action == "remove":
-        user = get_user_data(target_user_id)
-        user["role"] = "user"
-        save_user_data(target_user_id, user)
-        await update.message.reply_text(f"✅ User {target_user_id} ၏ special role ကို ဖယ်ရှားပြီးပါပြီ!")
+    async def learn_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /learn command - Start daily lesson"""
+        user_id = update.effective_user.id
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("Please use /start first!")
+            return
+        
+        # Generate daily lesson
+        lesson = self.content_manager.generate_daily_lesson(
+            user['learning_language'],
+            user['level']
+        )
+        
+        lesson_text = (
+            f"📚 *Today's Lesson*\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"*Topic:* {lesson['topic']}\n"
+            f"*Level:* {lesson['level']}\n\n"
+            f"Ready to start? This lesson includes:\n"
+            f"• 5 new vocabulary words\n"
+            f"• 1 grammar point\n"
+            f"• Listening exercise\n"
+            f"• Practice quiz\n\n"
+            f"Estimated time: 10 minutes ⏱️"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("🚀 Start Lesson", callback_data=f"start_lesson_{lesson['id']}")],
+            [InlineKeyboardButton("📋 Choose Different Topic", callback_data="browse_lessons")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            lesson_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    
+    async def vocab_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /vocab command - Show daily vocabulary"""
+        user_id = update.effective_user.id
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("Please use /start first!")
+            return
+        
+        # Get today's vocabulary
+        vocab_list = self.content_manager.get_daily_vocabulary(
+            user['learning_language'],
+            user['level'],
+            count=5
+        )
+        
+        vocab_text = "📖 *Today's Vocabulary*\n━━━━━━━━━━━━━━━━━━\n\n"
+        
+        for idx, word in enumerate(vocab_list, 1):
+            vocab_text += (
+                f"{idx}. *{word['word']}* ({word['pronunciation']})\n"
+                f"   _{word['translation']}_\n"
+                f"   Example: {word['example']}\n\n"
+            )
+        
+        keyboard = [
+            [InlineKeyboardButton("🔊 Practice Pronunciation", callback_data="practice_pronunciation")],
+            [InlineKeyboardButton("📝 Take Vocab Quiz", callback_data="vocab_quiz")],
+            [InlineKeyboardButton("💾 Save to My Deck", callback_data="save_vocab")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            vocab_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    
+    async def tutor_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /tutor command - Start AI conversation"""
+        user_id = update.effective_user.id
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("Please use /start first!")
+            return
+        
+        tutor_text = (
+            "💬 *AI Tutor Mode*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "I'm your personal language tutor! 🤖\n\n"
+            "You can:\n"
+            "• Have a conversation in your learning language\n"
+            "• Ask me to correct your sentences\n"
+            "• Practice specific scenarios\n"
+            "• Get grammar explanations\n\n"
+            "Just start typing, or choose a scenario below:"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("🍕 Restaurant", callback_data="roleplay_restaurant")],
+            [InlineKeyboardButton("✈️ Airport", callback_data="roleplay_airport")],
+            [InlineKeyboardButton("🛒 Shopping", callback_data="roleplay_shopping")],
+            [InlineKeyboardButton("💼 Job Interview", callback_data="roleplay_interview")],
+            [InlineKeyboardButton("💬 Free Conversation", callback_data="roleplay_free")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Enable tutor mode
+        context.user_data['tutor_mode'] = True
+        
+        await update.message.reply_text(
+            tutor_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    
+    async def quiz_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /quiz command - Start quiz"""
+        user_id = update.effective_user.id
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("Please use /start first!")
+            return
+        
+        quiz_text = (
+            "🎯 *Quiz Time!*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "Test your knowledge and earn XP! 🌟\n\n"
+            "Choose a quiz type:"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("⚡ Quick Quiz (5 questions)", callback_data="quiz_quick")],
+            [InlineKeyboardButton("🎓 Standard Quiz (10 questions)", callback_data="quiz_standard")],
+            [InlineKeyboardButton("🔥 Challenge Mode (Timed)", callback_data="quiz_challenge")],
+            [InlineKeyboardButton("📊 Level Test", callback_data="quiz_level_test")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            quiz_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    
+    async def progress_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /progress command - Show progress"""
+        user_id = update.effective_user.id
+        user = self.db.get_user(user_id)
+        
+        if not user:
+            await update.message.reply_text("Please use /start first!")
+            return
+        
+        # Generate progress card
+        progress_image = progress_card_gen.generate_card(user_id)
+        
+        progress_text = (
+            "📊 *Your Learning Progress*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"Week: {user['weekly_lessons']} lessons\n"
+            f"Month: {user['monthly_lessons']} lessons\n"
+            f"Total Study Time: {user['total_minutes']} minutes\n\n"
+            "Keep up the great work! 🌟"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("📈 Detailed Analytics", callback_data="detailed_analytics")],
+            [InlineKeyboardButton("🏆 Leaderboard", callback_data="show_leaderboard")],
+            [InlineKeyboardButton("📤 Share Progress", callback_data="share_progress")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if progress_image:
+            await update.message.reply_photo(
+                photo=progress_image,
+                caption=progress_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                progress_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+    
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /help command"""
+        help_text = (
+            "❓ *SUPER LEARNING BOT - Help*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "*📚 Learning Commands:*\n"
+            "/learn - Start daily lesson\n"
+            "/vocab - Today's vocabulary\n"
+            "/review - Review previous content\n"
+            "/path - Learning roadmap\n\n"
+            "*💬 Practice Commands:*\n"
+            "/tutor - AI conversation practice\n"
+            "/roleplay - Scenario practice\n"
+            "/correct - Grammar correction\n\n"
+            "*🎯 Quiz Commands:*\n"
+            "/quiz - Take a quiz\n"
+            "/challenge - Timed challenge\n"
+            "/exam - Level test\n\n"
+            "*📊 Progress Commands:*\n"
+            "/profile - Your profile\n"
+            "/progress - Progress stats\n"
+            "/streak - Streak info\n"
+            "/badges - Your achievements\n\n"
+            "*⚙️ Settings:*\n"
+            "/lang - Change language\n"
+            "/goal - Set daily goal\n\n"
+            "_Create by: PINLON-YOUTH_"
+        )
+        
+        await update.message.reply_text(
+            help_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    # ==================== ADMIN COMMANDS ====================
+    
+    async def admin_stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /stats command - Admin statistics"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_admin(user_id):
+            await update.message.reply_text("⛔ Admin access required!")
+            return
+        
+        stats = self.db.get_platform_stats()
+        
+        stats_text = (
+            "📊 *Platform Statistics*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"👥 Total Users: {stats['total_users']}\n"
+            f"✅ Active Today: {stats['active_today']}\n"
+            f"📚 Lessons Completed: {stats['total_lessons']}\n"
+            f"🎯 Quizzes Taken: {stats['total_quizzes']}\n"
+            f"💬 AI Conversations: {stats['total_conversations']}\n"
+            f"📈 Retention Rate: {stats['retention_rate']}%\n"
+        )
+        
+        await update.message.reply_text(
+            stats_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    async def broadcast_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /broadcast command - Send message to all users"""
+        user_id = update.effective_user.id
+        
+        if not self.db.is_admin(user_id):
+            await update.message.reply_text("⛔ Admin access required!")
+            return
+        
+        if not context.args:
+            await update.message.reply_text(
+                "Usage: /broadcast <message>\n"
+                "Send a message to all users."
+            )
+            return
+        
+        message = ' '.join(context.args)
+        users = self.db.get_all_users()
+        
+        success_count = 0
+        for user in users:
+            try:
+                await context.bot.send_message(
+                    chat_id=user['user_id'],
+                    text=f"📢 *Announcement*\n\n{message}",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                success_count += 1
+            except Exception as e:
+                logger.error(f"Failed to send to {user['user_id']}: {e}")
+        
+        await update.message.reply_text(
+            f"✅ Broadcast sent to {success_count}/{len(users)} users"
+        )
+    
+    # ==================== CALLBACK HANDLERS ====================
+    
+    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle all button callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        data = query.data
+        user_id = query.from_user.id
+        
+        # Route to appropriate handler
+        if data.startswith('start_lesson_'):
+            await self.handle_start_lesson(query, context)
+        elif data.startswith('quiz_'):
+            await self.handle_quiz_start(query, context)
+        elif data.startswith('roleplay_'):
+            await self.handle_roleplay(query, context)
+        # Add more handlers as needed
+    
+    async def handle_start_lesson(self, query, context):
+        """Handle lesson start"""
+        lesson_id = query.data.split('_')[2]
+        # Implementation for starting lesson
+        await query.edit_message_text("Starting lesson... 📚")
+    
+    async def handle_quiz_start(self, query, context):
+        """Handle quiz start"""
+        quiz_type = query.data.split('_')[1]
+        # Implementation for starting quiz
+        await query.edit_message_text("Starting quiz... 🎯")
+    
+    async def handle_roleplay(self, query, context):
+        """Handle roleplay scenario"""
+        scenario = query.data.split('_')[1]
+        # Implementation for roleplay
+        await query.edit_message_text(f"Starting {scenario} roleplay... 💬")
+    
+    # ==================== MESSAGE HANDLERS ====================
+    
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle regular text messages"""
+        user_id = update.effective_user.id
+        text = update.message.text
+        
+        # Check if in tutor mode
+        if context.user_data.get('tutor_mode'):
+            response = await self.ai_tutor.get_response(user_id, text)
+            await update.message.reply_text(response)
+        else:
+            # Handle menu button presses
+            if text == '📚 Learn':
+                await self.learn_command(update, context)
+            elif text == '🧠 Review':
+                await update.message.reply_text("Review feature coming soon! 🎯")
+            elif text == '💬 AI Tutor':
+                await self.tutor_command(update, context)
+            elif text == '📊 Progress':
+                await self.progress_command(update, context)
+            elif text == '🎯 Quiz':
+                await self.quiz_command(update, context)
+            elif text == '📖 Vocabulary':
+                await self.vocab_command(update, context)
+            elif text == '❓ Help':
+                await self.help_command(update, context)
 
-# ==================== Main ====================
 
 def main():
     """Start the bot"""
-    # Get bot token from environment
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        logger.error("BOT_TOKEN not found in .env file!")
+    # Get token from environment
+    TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+    
+    if not TOKEN:
+        logger.error("No TELEGRAM_BOT_TOKEN found in environment!")
         return
     
-    # Create application
-    application = Application.builder().token(token).build()
+    # Create bot instance
+    bot = SuperLearningBot()
     
-    # User commands
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("lesson", lesson))
-    application.add_handler(CommandHandler("startlesson", startlesson))
-    application.add_handler(CommandHandler("vocab", vocab))
-    application.add_handler(CommandHandler("flashcard", flashcard))
-    application.add_handler(CommandHandler("pronounce", pronounce))
-    application.add_handler(CommandHandler("translate", translate))
-    application.add_handler(CommandHandler("quiz", quiz))
-    application.add_handler(CommandHandler("streak", streak))
-    application.add_handler(CommandHandler("progress", progress))
-    application.add_handler(CommandHandler("practice", practice))
-    application.add_handler(CommandHandler("homework", homework))
-    application.add_handler(CommandHandler("report", report))
+    # Create application
+    application = Application.builder().token(TOKEN).build()
+    
+    # Conversation handler for onboarding
+    onboarding_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', bot.start_command)],
+        states={
+            SELECTING_LANGUAGE: [CallbackQueryHandler(bot.language_selected, pattern='^lang_')],
+            LEVEL_TEST: [CallbackQueryHandler(bot.level_selected, pattern='^level_')],
+            GOAL_SETTING: [CallbackQueryHandler(bot.goal_selected, pattern='^goal_')],
+        },
+        fallbacks=[CommandHandler('start', bot.start_command)],
+    )
+    
+    # Add handlers
+    application.add_handler(onboarding_handler)
+    application.add_handler(CommandHandler('lang', bot.lang_command))
+    application.add_handler(CommandHandler('profile', bot.profile_command))
+    application.add_handler(CommandHandler('learn', bot.learn_command))
+    application.add_handler(CommandHandler('vocab', bot.vocab_command))
+    application.add_handler(CommandHandler('tutor', bot.tutor_command))
+    application.add_handler(CommandHandler('quiz', bot.quiz_command))
+    application.add_handler(CommandHandler('progress', bot.progress_command))
+    application.add_handler(CommandHandler('help', bot.help_command))
     
     # Admin commands
-    application.add_handler(CommandHandler("edlesson", edlesson))
-    application.add_handler(CommandHandler("edvocab", edvocab))
-    application.add_handler(CommandHandler("edquiz", edquiz))
-    application.add_handler(CommandHandler("broadcast", broadcast))
-    application.add_handler(CommandHandler("stats", stats))
-    application.add_handler(CommandHandler("backup", backup))
-    application.add_handler(CommandHandler("roles", roles))
+    application.add_handler(CommandHandler('stats', bot.admin_stats_command))
+    application.add_handler(CommandHandler('broadcast', bot.broadcast_command))
     
     # Callback handlers
-    application.add_handler(CallbackQueryHandler(flashcard_callback, pattern="^flashcard_"))
-    application.add_handler(CallbackQueryHandler(quiz_callback, pattern="^quiz_"))
+    application.add_handler(CallbackQueryHandler(bot.button_callback))
+    
+    # Message handlers
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
+    
+    # Start scheduler for daily reminders
+    scheduler.start(application)
     
     # Start bot
-    logger.info("Bot started!")
+    logger.info("🚀 SUPER LEARNING BOT is starting...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
