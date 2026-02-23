@@ -6,19 +6,19 @@ supported languages, and lesson level maps.
 """
 import os
 from dotenv import load_dotenv
-# config.py ရဲ့ အပေါ်ဆုံးမှာ import လုပ်ပါ
 from typing import Optional
 
-# line 105 ကို အောက်ပါအတိုင်း ပြင်ပါ
+# Environment variables ကို load လုပ်ခြင်း
 load_dotenv()
 
 # ─────────────────────────────────────────
 #  BOT CORE
-#  ─────────────────────────────────────────
+# ─────────────────────────────────────────
 BOT_TOKEN   = os.getenv("BOT_TOKEN", "")
 ADMIN_IDS   = [int(x) for x in os.getenv("ADMIN_IDS", "0").split(",") if x.strip().isdigit()]
 DB_PATH     = os.getenv("DB_PATH", "super_learning_bot.db")
- TIMEZONE    = os.getenv("TIMEZONE", "Asia/Yangon")
+# TIMEZONE ရဲ့ အရှေ့က space ကို ဖယ်ရှားထားပါတယ်
+TIMEZONE    = os.getenv("TIMEZONE", "Asia/Yangon")
 DAILY_TIME  = os.getenv("DAILY_LESSON_TIME", "08:00")
 REVIEW_TIME = os.getenv("EVENING_REVIEW_TIME", "20:00")
 
@@ -51,12 +51,12 @@ LEVELS = [
     (10000, "🚀 Legend"),
 ]
 
-def get_level(xp: int) -> tuple[str, int, int]:
+def get_level(xp: int) -> tuple:
     """Returns (level_name, current_level_index, xp_for_next_level)."""
     for i, (req, name) in enumerate(LEVELS):
         if xp < req:
-            return LEVELS[i - 1][1] if i > 0 else LEVELS[0][1], i - 1, req
-    return LEVELS[-1][1], len(LEVELS) - 1, -1
+            return (LEVELS[i - 1][1] if i > 0 else LEVELS[0][1], i - 1, req)
+    return (LEVELS[-1][1], len(LEVELS) - 1, -1)
 
 BADGES = {
     "first_lesson"   : ("🎯", "First Step",    "Complete your first lesson"),
@@ -72,12 +72,12 @@ BADGES = {
 }
 
 # ─────────────────────────────────────────
- #  SUPPORTED LANGUAGES
+#  SUPPORTED LANGUAGES
 # ─────────────────────────────────────────
 SUPPORTED_LANGS = {
     "english"   : {"code": "en", "name": "🇺🇸 English",   "tts_lang": "en"},
     "korean"    : {"code": "ko", "name": "🇰🇷 Korean",    "tts_lang": "ko"},
-    "japanese"   : {"code": "ja", "name": "🇯🇵 Japanese",  "tts_lang": "ja"},
+    "japanese"  : {"code": "ja", "name": "🇯🇵 Japanese",  "tts_lang": "ja"},
     "chinese"   : {"code": "zh-cn", "name": "🇨🇳 Chinese", "tts_lang": "zh"},
     "burmese"   : {"code": "my", "name": "🇲🇲 Burmese",   "tts_lang": "my"},
     "french"    : {"code": "fr", "name": "🇫🇷 French",    "tts_lang": "fr"},
@@ -104,7 +104,9 @@ LANG_ALIASES = {
     "viet"    : "vietnamese",
     "vi"      : "vietnamese",
 }
+
 def resolve_lang(text: str) -> Optional[str]:
+    """Resolves language from user input string."""
     key = text.strip().lower()
     if key in SUPPORTED_LANGS:
         return key
@@ -125,4 +127,3 @@ MAIN_MENU_TEXT = (
     "━━━━━━━━━━━━━━━━━━━━\n"
     "Choose what you want to do:"
 )
- 
