@@ -7,6 +7,7 @@ Create by: PINLON-YOUTH
 
 import os
 import logging
+from dotenv import load_dotenv # လိုအပ်သော library
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import json
@@ -38,6 +39,9 @@ from content_manager import ContentManager
 from gamification import GamificationEngine
 from progress_card import ProgressCardGenerator
 from scheduler import DailyScheduler
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
