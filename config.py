@@ -6,7 +6,12 @@ supported languages, and lesson level maps.
 """
 import os
 from dotenv import load_dotenv
+# config.py ရဲ့ အပေါ်ဆုံးမှာ import လုပ်ပါ
+from typing import Optional
 
+# line 105 ကို အောက်ပါအတိုင်း ပြင်ပါ
+def resolve_lang(text: str) -> Optional[str]:
+    # ... code ...
 load_dotenv()
 
 # ─────────────────────────────────────────
@@ -101,8 +106,7 @@ LANG_ALIASES = {
     "viet"    : "vietnamese",
     "vi"      : "vietnamese",
 }
-
-def resolve_lang(text: str) -> str | None:
+def resolve_lang(text: str) -> Optional[str]:
     key = text.strip().lower()
     if key in SUPPORTED_LANGS:
         return key
@@ -123,3 +127,4 @@ MAIN_MENU_TEXT = (
     "━━━━━━━━━━━━━━━━━━━━\n"
     "Choose what you want to do:"
 )
+ 
