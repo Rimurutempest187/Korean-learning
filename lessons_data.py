@@ -147,31 +147,80 @@ KOREAN_LESSONS = {
                 {"word": "아니요 (Aniyo)",             "meaning": "No",                  "example": "아니요, 괜찮아요."},
                 {"word": "죄송합니다 (Joesonghamnida)","meaning": "I'm sorry (formal)",  "example": "늦어서 죄송합니다."},
                 {"word": "이름 (Ireum)",               "meaning": "Name",                "example": "이름이 뭐예요?"},
-                {"word": "나라 (Nara)",                "meaning": "Country",              "example": "어느 나라 사람이에요?"},
             ],
             "grammar": {
                 "rule": "저는 ~ 이에요/예요 (I am ~)",
-                "example": "저는 학생이에요. (I am a student.) 저는 민준이에요. (I am Minjun.)",
+                "example": "저는 학생이에요. (I am a student.)",
                 "tip": "💡 이에요 after consonant, 예요 after vowel"
             },
             "quiz": [
-                {"q": "How do you say 'Hello' formally in Korean?", "opts": ["감사합니다","안녕하세요","죄송합니다","이름"], "ans": 1},
-                {"q": "'네' means:", "opts": ["No","Maybe","Yes","Hello"], "ans": 2},
-                {"q": "I am a student = 저는 학생___", "opts": ["이에요","예요","있어요","해요"], "ans": 0},
-                {"q": "'감사합니다' means:", "opts": ["Sorry","Yes","Thank you","Goodbye"], "ans": 2},
-                {"q": "How do you ask 'What is your name?'", "opts": ["어디에요?","이름이 뭐예요?","뭐 해요?","어때요?"], "ans": 1},
+                {"q": "How to say 'Hello' in Korean?", "opts": ["감사합니다","안녕하세요","죄송합니다","이름"], "ans": 1},
             ]
         },
     },
 }
 
 # ─────────────────────────────────────────
-#  ALL LESSONS REGISTRY
+#  LEVEL TEST QUESTIONS
+# ─────────────────────────────────────────
+LEVEL_TEST = {
+    "english": [
+        {"q": "What is the capital of England?",         "opts": ["Paris","London","Berlin","Rome"],     "ans": 1, "level": "A1"},
+        {"q": "She ___ to school every day.",             "opts": ["go","goes","going","went"],           "ans": 1, "level": "A1"},
+        {"q": "Choose the correct sentence:",            "opts": ["I am go school","I go to school","I going school","I goes school"], "ans": 1, "level": "A2"},
+        {"q": "Which sentence uses Past Simple?",        "opts": ["I eat breakfast","I will eat","I ate breakfast","I am eating"], "ans": 2, "level": "A2"},
+        {"q": "By the time she arrived, he ___ left.",   "opts": ["has","had","have","will have"],        "ans": 1, "level": "B1"},
+        {"q": "The report ___ submitted by Friday.",     "opts": ["must","should be","must be","has"],    "ans": 2, "level": "B2"},
+        {"q": "Hardly ___ he sat down when the phone rang.", "opts": ["had","did","was","has"],           "ans": 0, "level": "C1"},
+        {"q": "The phenomenon ___ considerable debate.", "opts": ["has elicit","has elicited","eliciting","have elicited"], "ans": 1, "level": "C2"},
+    ]
+}
+
+# ─────────────────────────────────────────
+#  ROLEPLAY SCENARIOS
+# ─────────────────────────────────────────
+ROLEPLAY_SCENARIOS = {
+    "restaurant": {
+        "title": "🍽️ At a Restaurant",
+        "context": "You are a customer at a restaurant.",
+        "prompts": [
+            "Bot (Waiter): Welcome! Do you have a reservation?",
+            "Bot (Waiter): What would you like to order?",
+            "Bot (Waiter): Here is your bill. That will be $25.",
+        ],
+        "vocab": ["reservation", "menu", "order", "bill", "waiter"],
+    },
+    "airport": {
+        "title": "✈️ At the Airport",
+        "context": "You are checking in at the airport.",
+        "prompts": [
+            "Bot (Staff): Good morning! May I see your passport?",
+            "Bot (Staff): Your boarding gate is B12. Have a safe flight!",
+        ],
+        "vocab": ["passport", "boarding pass", "gate", "departure"],
+    }
+}
+
+# ─────────────────────────────────────────
+#  DAILY VOCAB (rotating)
+# ─────────────────────────────────────────
+DAILY_VOCAB = {
+    "english": [
+        {"word": "Perseverance", "meaning": "Continued effort despite difficulties", "example": "Her perseverance paid off."},
+        {"word": "Eloquent",     "meaning": "Fluent and persuasive in speaking",     "example": "He gave an eloquent speech."},
+        {"word": "Resilient",    "meaning": "Able to recover quickly",                "example": "Children are resilient."},
+        {"word": "Endeavor",     "meaning": "To try hard to do something",           "example": "We will endeavor to improve."},
+        {"word": "Ambiguous",    "meaning": "Having more than one meaning",           "example": "His answer was ambiguous."},
+    ],
+}
+
+# ─────────────────────────────────────────
+#  REGISTRY & FUNCTIONS
 # ─────────────────────────────────────────
 ALL_LESSONS = {
     "english" : ENGLISH_LESSONS,
     "korean"  : KOREAN_LESSONS,
-    "japanese": {}, # Placeholder
+    "japanese": {},
 }
 
 def get_lessons_for(lang: str, level: Optional[str] = None) -> Dict:
@@ -189,7 +238,6 @@ def get_daily_lesson(lang: str, level: str, completed: List) -> Optional[Tuple[s
     for key, lesson in level_data.items():
         if key not in completed:
             return key, lesson
-    # All done — wrap around
     if level_data:
         first_key = list(level_data.keys())[0]
         return first_key, level_data[first_key]
@@ -203,21 +251,6 @@ def determine_level(correct: int, total: int) -> str:
     if ratio >= 0.5:   return "B1"
     if ratio >= 0.25:  return "A2"
     return "A1"
-
-# ─────────────────────────────────────────
-#  DAILY VOCAB (rotating)
-# ─────────────────────────────────────────
-DAILY_VOCAB = {
-    "english": [
-        {"word": "Perseverance", "meaning": "Continued effort despite difficulties", "example": "Her perseverance paid off in the end."},
-        {"word": "Eloquent",     "meaning": "Fluent and persuasive in speaking",     "example": "He gave an eloquent speech."},
-        {"word": "Resilient",    "meaning": "Able to recover quickly",                "example": "Children are very resilient."},
-        {"word": "Endeavor",     "meaning": "To try hard to do something",           "example": "We will endeavor to improve."},
-        {"word": "Ambiguous",    "meaning": "Having more than one possible meaning", "example": "His answer was ambiguous."},
-        {"word": "Concise",      "meaning": "Brief but comprehensive",                "example": "Please be concise in your reply."},
-        {"word": "Diligent",     "meaning": "Having steady effort and care",          "example": "She is a diligent student."},
-    ],
-}
 
 def get_daily_words(lang: str, count: int = 5) -> List[Dict]:
     import datetime
