@@ -1,9 +1,12 @@
+# -*- coding: utf-8 -*-
 """
 SUPER LEARNING BOT — Built-in Lesson Content
 =============================================
 Comprehensive lesson data for English, Korean, Japanese.
 No API needed — everything is embedded.
 """
+
+from typing import Dict, List, Optional, Tuple, Any
 
 # ─────────────────────────────────────────
 #  ENGLISH LESSONS
@@ -128,31 +131,6 @@ ENGLISH_LESSONS = {
             ]
         },
     },
-    "B1": {
-        "travel": {
-            "title": "✈️ Travel & Transportation",
-            "vocab": [
-                {"word": "Departure",  "meaning": "The act of leaving",          "example": "Departure time is 9 AM."},
-                {"word": "Arrival",    "meaning": "The act of reaching",          "example": "Arrival is at 2 PM."},
-                {"word": "Passport",   "meaning": "ID document for travel",       "example": "Don't forget your passport!"},
-                {"word": "Boarding",   "meaning": "Getting on a plane/bus",       "example": "Boarding starts in 20 minutes."},
-                {"word": "Itinerary",  "meaning": "Planned travel schedule",      "example": "Here is our travel itinerary."},
-                {"word": "Currency",   "meaning": "Money used in a country",      "example": "What currency do they use?"},
-                {"word": "Accommodation","meaning": "A place to stay",            "example": "We need to book accommodation."},
-            ],
-            "grammar": {
-                "rule": "Future tense: will / going to",
-                "example": "I will fly to Japan next week. I'm going to book a hotel.",
-                "tip": "💡 'will' for spontaneous decisions, 'going to' for planned actions"
-            },
-            "quiz": [
-                {"q": "I ___ book a hotel tomorrow. (planned)", "opts": ["will","am going to","was","had"], "ans": 1},
-                {"q": "What is an 'itinerary'?", "opts": ["A hotel","A travel plan","A passport","A ticket"], "ans": 1},
-                {"q": "Where do you show your passport?", "opts": ["Restaurant","School","Airport","Gym"], "ans": 2},
-                {"q": "The plane ___ at 3 PM.", "opts": ["arrive","arriving","arrives","will arrive"], "ans": 3},
-            ]
-        },
-    },
 }
 
 # ─────────────────────────────────────────
@@ -165,11 +143,11 @@ KOREAN_LESSONS = {
             "vocab": [
                 {"word": "안녕하세요 (Annyeonghaseyo)", "meaning": "Hello (formal)",     "example": "안녕하세요! 저는 민준이에요."},
                 {"word": "감사합니다 (Gamsahamnida)",  "meaning": "Thank you (formal)",  "example": "도와줘서 감사합니다."},
-                {"word": "네 (Ne)",                   "meaning": "Yes",                 "example": "네, 알겠습니다."},
+                {"word": "네 (Ne)",                   "meaning": "Yes",                  "example": "네, 알겠습니다."},
                 {"word": "아니요 (Aniyo)",             "meaning": "No",                  "example": "아니요, 괜찮아요."},
                 {"word": "죄송합니다 (Joesonghamnida)","meaning": "I'm sorry (formal)",  "example": "늦어서 죄송합니다."},
                 {"word": "이름 (Ireum)",               "meaning": "Name",                "example": "이름이 뭐예요?"},
-                {"word": "나라 (Nara)",                "meaning": "Country",             "example": "어느 나라 사람이에요?"},
+                {"word": "나라 (Nara)",                "meaning": "Country",              "example": "어느 나라 사람이에요?"},
             ],
             "grammar": {
                 "rule": "저는 ~ 이에요/예요 (I am ~)",
@@ -184,85 +162,6 @@ KOREAN_LESSONS = {
                 {"q": "How do you ask 'What is your name?'", "opts": ["어디에요?","이름이 뭐예요?","뭐 해요?","어때요?"], "ans": 1},
             ]
         },
-        "numbers_kr": {
-            "title": "🔢 Korean Numbers (숫자)",
-            "vocab": [
-                {"word": "일 (Il)",   "meaning": "1 (Sino-Korean)", "example": "일 층 (1st floor)"},
-                {"word": "이 (I)",    "meaning": "2 (Sino-Korean)", "example": "이 월 (February)"},
-                {"word": "삼 (Sam)", "meaning": "3 (Sino-Korean)", "example": "삼 일 (3 days)"},
-                {"word": "하나",      "meaning": "1 (Native Korean)","example": "하나, 둘, 셋..."},
-                {"word": "둘",        "meaning": "2 (Native Korean)","example": "사과 둘 (2 apples)"},
-                {"word": "셋",        "meaning": "3 (Native Korean)","example": "세 시 (3 o'clock)"},
-                {"word": "열",        "meaning": "10 (Native Korean)","example": "열 살 (10 years old)"},
-            ],
-            "grammar": {
-                "rule": "Korean has TWO number systems",
-                "example": "Sino-Korean: 1=일,2=이,3=삼 (dates, money, phone)\nNative Korean: 1=하나,2=둘,3=셋 (counting items, age)",
-                "tip": "💡 Use Native Korean for counting objects and age!"
-            },
-            "quiz": [
-                {"q": "How do you say '3' in Sino-Korean?", "opts": ["셋","삼","세","셋"], "ans": 1},
-                {"q": "Which number system is used for age?", "opts": ["Sino-Korean","Native Korean","Both","Neither"], "ans": 1},
-                {"q": "'둘' means:", "opts": ["1","3","2","4"], "ans": 2},
-            ]
-        },
-    },
-    "A2": {
-        "food": {
-            "title": "🍜 Korean Food (음식)",
-            "vocab": [
-                {"word": "밥 (Bap)",       "meaning": "Rice / meal",    "example": "밥 먹었어요? (Did you eat?)"},
-                {"word": "물 (Mul)",        "meaning": "Water",          "example": "물 한 잔 주세요."},
-                {"word": "맛있어요",         "meaning": "Delicious",      "example": "이 김치 정말 맛있어요!"},
-                {"word": "맵다 (Maepda)",   "meaning": "Spicy",          "example": "이 음식은 너무 매워요."},
-                {"word": "달다 (Dalda)",    "meaning": "Sweet",          "example": "이 케이크는 달아요."},
-                {"word": "식당 (Sikdang)", "meaning": "Restaurant",     "example": "근처에 식당이 있어요?"},
-                {"word": "메뉴 (Menyu)",   "meaning": "Menu",           "example": "메뉴 좀 주세요."},
-            ],
-            "grammar": {
-                "rule": "주세요 (juseyo) = Please give me",
-                "example": "물 주세요 (Please give me water)\n메뉴 주세요 (Please give me the menu)",
-                "tip": "💡 Noun + 주세요 is one of the most useful restaurant phrases!"
-            },
-            "quiz": [
-                {"q": "'맛있어요' means:", "opts": ["Spicy","Delicious","Sweet","Hot"], "ans": 1},
-                {"q": "How to say 'Please give me water'?", "opts": ["물 먹어요","물 주세요","물 가요","물 있어요"], "ans": 1},
-                {"q": "'식당' means:", "opts": ["Market","Restaurant","Hotel","School"], "ans": 1},
-            ]
-        },
-    },
-}
-
-# ─────────────────────────────────────────
-#  JAPANESE LESSONS
-# ─────────────────────────────────────────
-JAPANESE_LESSONS = {
-    "A1": {
-        "hiragana": {
-            "title": "🇯🇵 Japanese Greetings (挨拶)",
-            "vocab": [
-                {"word": "おはようございます",  "meaning": "Good morning (formal)",  "example": "おはようございます！元気ですか？"},
-                {"word": "こんにちは",          "meaning": "Hello / Good afternoon", "example": "こんにちは！いい天気ですね。"},
-                {"word": "こんばんは",          "meaning": "Good evening",           "example": "こんばんは！今日はどうでしたか？"},
-                {"word": "ありがとうございます", "meaning": "Thank you (formal)",     "example": "助けてくれてありがとうございます。"},
-                {"word": "すみません",          "meaning": "Excuse me / Sorry",      "example": "すみません、駅はどこですか？"},
-                {"word": "はい",               "meaning": "Yes",                    "example": "はい、わかりました。"},
-                {"word": "いいえ",             "meaning": "No",                     "example": "いいえ、違います。"},
-                {"word": "わたしは ~ です",     "meaning": "I am ~",                 "example": "わたしはアリです。"},
-            ],
-            "grammar": {
-                "rule": "～は ～ です (X wa Y desu = X is Y)",
-                "example": "わたしは学生です。(I am a student.)\nこれは本です。(This is a book.)",
-                "tip": "💡 は (wa) marks the topic, です (desu) is like 'am/is/are'"
-            },
-            "quiz": [
-                {"q": "How do you say 'Hello' in Japanese?", "opts": ["ありがとう","おはよう","こんにちは","さようなら"], "ans": 2},
-                {"q": "'はい' means:", "opts": ["No","Maybe","Yes","Please"], "ans": 2},
-                {"q": "I am a student = わたしは学生___", "opts": ["は","が","です","を"], "ans": 2},
-                {"q": "'すみません' is used to:", "opts": ["Say goodbye","Say thank you","Get attention","Say yes"], "ans": 2},
-                {"q": "Good morning (formal) in Japanese:", "opts": ["こんにちは","こんばんは","おはようございます","さようなら"], "ans": 2},
-            ]
-        },
     },
 }
 
@@ -272,19 +171,19 @@ JAPANESE_LESSONS = {
 ALL_LESSONS = {
     "english" : ENGLISH_LESSONS,
     "korean"  : KOREAN_LESSONS,
-    "japanese": JAPANESE_LESSONS,
+    "japanese": {}, # Placeholder
 }
 
-def get_lessons_for(lang: str, level: str = None) -> dict:
+def get_lessons_for(lang: str, level: Optional[str] = None) -> Dict:
     lang_data = ALL_LESSONS.get(lang, ENGLISH_LESSONS)
     if level:
         return lang_data.get(level, {})
     return lang_data
 
-def get_lesson(lang: str, level: str, key: str) -> dict | None:
+def get_lesson(lang: str, level: str, key: str) -> Optional[Dict]:
     return ALL_LESSONS.get(lang, {}).get(level, {}).get(key)
 
-def get_daily_lesson(lang: str, level: str, completed: list) -> tuple[str, dict] | None:
+def get_daily_lesson(lang: str, level: str, completed: List) -> Optional[Tuple[str, Dict]]:
     lang_data = ALL_LESSONS.get(lang, ENGLISH_LESSONS)
     level_data = lang_data.get(level, {})
     for key, lesson in level_data.items():
@@ -295,74 +194,6 @@ def get_daily_lesson(lang: str, level: str, completed: list) -> tuple[str, dict]
         first_key = list(level_data.keys())[0]
         return first_key, level_data[first_key]
     return None
-
-# ─────────────────────────────────────────
-#  ROLEPLAY SCENARIOS
-# ─────────────────────────────────────────
-ROLEPLAY_SCENARIOS = {
-    "restaurant": {
-        "title": "🍽️ At a Restaurant",
-        "context": "You are a customer at a restaurant.",
-        "prompts": [
-            "Bot (Waiter): Welcome! Do you have a reservation?",
-            "Bot (Waiter): What would you like to order?",
-            "Bot (Waiter): How would you like your steak cooked?",
-            "Bot (Waiter): Would you like dessert?",
-            "Bot (Waiter): Here is your bill. That will be $25.",
-        ],
-        "vocab": ["reservation", "menu", "order", "bill", "waiter", "chef", "appetizer", "dessert"],
-    },
-    "airport": {
-        "title": "✈️ At the Airport",
-        "context": "You are checking in at the airport.",
-        "prompts": [
-            "Bot (Staff): Good morning! May I see your passport?",
-            "Bot (Staff): How many bags are you checking in?",
-            "Bot (Staff): Do you have any liquids in your carry-on?",
-            "Bot (Staff): Your boarding gate is B12. Have a safe flight!",
-        ],
-        "vocab": ["passport", "boarding pass", "gate", "departure", "carry-on", "check-in", "customs"],
-    },
-    "job_interview": {
-        "title": "💼 Job Interview",
-        "context": "You are being interviewed for a job.",
-        "prompts": [
-            "Bot (Interviewer): Tell me about yourself.",
-            "Bot (Interviewer): Why do you want this position?",
-            "Bot (Interviewer): What are your greatest strengths?",
-            "Bot (Interviewer): Where do you see yourself in 5 years?",
-            "Bot (Interviewer): Do you have any questions for us?",
-        ],
-        "vocab": ["experience", "qualifications", "skills", "team player", "initiative", "responsibilities"],
-    },
-    "hotel": {
-        "title": "🏨 At the Hotel",
-        "context": "You are checking in at a hotel.",
-        "prompts": [
-            "Bot (Receptionist): Good evening! Do you have a booking?",
-            "Bot (Receptionist): How many nights will you be staying?",
-            "Bot (Receptionist): Would you like a king or twin room?",
-            "Bot (Receptionist): Breakfast is served from 7-10 AM.",
-        ],
-        "vocab": ["reservation", "check-in", "check-out", "room service", "key card", "lobby", "concierge"],
-    },
-}
-
-# ─────────────────────────────────────────
-#  LEVEL TEST QUESTIONS
-# ─────────────────────────────────────────
-LEVEL_TEST = {
-    "english": [
-        {"q": "What is the capital of England?",         "opts": ["Paris","London","Berlin","Rome"],     "ans": 1, "level": "A1"},
-        {"q": "She ___ to school every day.",             "opts": ["go","goes","going","went"],           "ans": 1, "level": "A1"},
-        {"q": "Choose the correct sentence:",            "opts": ["I am go school","I go to school","I going school","I goes school"], "ans": 1, "level": "A2"},
-        {"q": "Which sentence uses Past Simple?",        "opts": ["I eat breakfast","I will eat","I ate breakfast","I am eating"], "ans": 2, "level": "A2"},
-        {"q": "By the time she arrived, he ___ left.",   "opts": ["has","had","have","will have"],        "ans": 1, "level": "B1"},
-        {"q": "The report ___ submitted by Friday.",     "opts": ["must","should be","must be","has"],    "ans": 2, "level": "B2"},
-        {"q": "Hardly ___ he sat down when the phone rang.", "opts": ["had","did","was","has"],           "ans": 0, "level": "C1"},
-        {"q": "The phenomenon ___ considerable debate.", "opts": ["has elicit","has elicited","eliciting","have elicited"], "ans": 1, "level": "C2"},
-    ]
-}
 
 def determine_level(correct: int, total: int) -> str:
     ratio = correct / total if total > 0 else 0
@@ -380,28 +211,15 @@ DAILY_VOCAB = {
     "english": [
         {"word": "Perseverance", "meaning": "Continued effort despite difficulties", "example": "Her perseverance paid off in the end."},
         {"word": "Eloquent",     "meaning": "Fluent and persuasive in speaking",     "example": "He gave an eloquent speech."},
-        {"word": "Resilient",    "meaning": "Able to recover quickly",               "example": "Children are very resilient."},
+        {"word": "Resilient",    "meaning": "Able to recover quickly",                "example": "Children are very resilient."},
         {"word": "Endeavor",     "meaning": "To try hard to do something",           "example": "We will endeavor to improve."},
         {"word": "Ambiguous",    "meaning": "Having more than one possible meaning", "example": "His answer was ambiguous."},
-        {"word": "Concise",      "meaning": "Brief but comprehensive",               "example": "Please be concise in your reply."},
-        {"word": "Diligent",     "meaning": "Having steady effort and care",         "example": "She is a diligent student."},
-    ],
-    "korean": [
-        {"word": "노력 (Noryeok)",     "meaning": "Effort / Hard work",   "example": "노력하면 성공할 수 있어요."},
-        {"word": "꿈 (Kkum)",          "meaning": "Dream",                "example": "제 꿈은 의사가 되는 거예요."},
-        {"word": "사랑 (Sarang)",      "meaning": "Love",                 "example": "사랑해요!"},
-        {"word": "행복 (Haengbok)",    "meaning": "Happiness",            "example": "오늘 정말 행복해요."},
-        {"word": "친구 (Chingu)",      "meaning": "Friend",               "example": "제 친구는 정말 좋아요."},
-    ],
-    "japanese": [
-        {"word": "努力 (Doryoku)",    "meaning": "Effort",    "example": "努力すれば夢が叶います。"},
-        {"word": "夢 (Yume)",         "meaning": "Dream",     "example": "私の夢は医者になることです。"},
-        {"word": "友達 (Tomodachi)", "meaning": "Friend",    "example": "友達と一緒に勉強します。"},
-        {"word": "幸せ (Shiawase)", "meaning": "Happiness", "example": "今日は幸せです。"},
+        {"word": "Concise",      "meaning": "Brief but comprehensive",                "example": "Please be concise in your reply."},
+        {"word": "Diligent",     "meaning": "Having steady effort and care",          "example": "She is a diligent student."},
     ],
 }
 
-def get_daily_words(lang: str, count: int = 5) -> list[dict]:
+def get_daily_words(lang: str, count: int = 5) -> List[Dict]:
     import datetime
     words = DAILY_VOCAB.get(lang, DAILY_VOCAB["english"])
     day   = datetime.date.today().day
