@@ -8,6 +8,8 @@ import sqlite3
 import json
 import time
 from datetime import datetime, date
+# typing မှ လိုအပ်သော အမျိုးအစားများကို import လုပ်ထားပါသည်
+from typing import Optional, List, Dict, Tuple, Any
 from config import DB_PATH
 
 # ─────────────────────────────────────────
@@ -43,17 +45,17 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS vocab (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id    INTEGER,
-            word       TEXT,
-            meaning    TEXT,
-            example    TEXT,
-            lang       TEXT,
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER,
+            word         TEXT,
+            meaning      TEXT,
+            example      TEXT,
+            lang         TEXT,
             next_review TEXT,
-            ease       REAL DEFAULT 2.5,
-            interval   INTEGER DEFAULT 1,
-            reps       INTEGER DEFAULT 0,
-            added_at   TEXT,
+            ease         REAL DEFAULT 2.5,
+            interval     INTEGER DEFAULT 1,
+            reps         INTEGER DEFAULT 0,
+            added_at     TEXT,
             UNIQUE(user_id, word, lang)
         );
 
@@ -143,7 +145,8 @@ def init_db():
 # ─────────────────────────────────────────
 #  USER CRUD
 # ─────────────────────────────────────────
-def get_user(user_id: int) -> dict | None:
+# dict | None ကို Optional[dict] ဟု ပြင်ဆင်ထားပါသည်
+def get_user(user_id: int) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
         return dict(row) if row else None
@@ -180,12 +183,16 @@ def update_streak(user_id: int):
     last  = user.get("last_active", "")[:10]
     if last == today:
         return user["streak"]
-    yesterday = (date.today().replace(day=date.today().day - 1)).isoformat()
+    
+    # နေ့စွဲတွက်ချက်မှု ပိုမိုတိကျစေရန် timedelta ကိုသုံးထားပါသည်
+    import datetime as dt
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    
     new_streak = (user["streak"] + 1) if last == yesterday else 1
     update_user(user_id, streak=new_streak, last_active=datetime.now().isoformat())
     return new_streak
 
-def get_leaderboard(limit=10) -> list[dict]:
+def get_leaderboard(limit=10) -> List[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT user_id, full_name, xp, streak FROM users ORDER BY xp DESC LIMIT ?",
@@ -193,7 +200,7 @@ def get_leaderboard(limit=10) -> list[dict]:
         ).fetchall()
         return [dict(r) for r in rows]
 
-def get_all_user_ids() -> list[int]:
+def get_all_user_ids() -> List[int]:
     with get_conn() as conn:
         rows = conn.execute("SELECT user_id FROM users").fetchall()
         return [r["user_id"] for r in rows]
@@ -201,7 +208,7 @@ def get_all_user_ids() -> list[int]:
 # ─────────────────────────────────────────
 #  STATE MACHINE
 # ─────────────────────────────────────────
-def get_state(user_id: int) -> tuple[str, dict]:
+def get_state(user_id: int) -> Tuple[str, dict]:
     with get_conn() as conn:
         row = conn.execute("SELECT state, data FROM user_state WHERE user_id=?", (user_id,)).fetchone()
         if row:
@@ -235,7 +242,7 @@ def save_vocab(user_id: int, word: str, meaning: str, example: str, lang: str):
         except sqlite3.IntegrityError:
             return False
 
-def get_vocab_deck(user_id: int, lang: str = None) -> list[dict]:
+def get_vocab_deck(user_id: int, lang: str = None) -> List[dict]:
     with get_conn() as conn:
         if lang:
             rows = conn.execute(
@@ -249,7 +256,7 @@ def get_vocab_deck(user_id: int, lang: str = None) -> list[dict]:
             ).fetchall()
         return [dict(r) for r in rows]
 
-def get_due_reviews(user_id: int) -> list[dict]:
+def get_due_reviews(user_id: int) -> List[dict]:
     now = datetime.now().isoformat()
     with get_conn() as conn:
         rows = conn.execute(
@@ -286,7 +293,8 @@ def update_vocab_sm2(vocab_id: int, quality: int):
 
 def count_vocab(user_id: int) -> int:
     with get_conn() as conn:
-        return conn.execute("SELECT COUNT(*) FROM vocab WHERE user_id=?", (user_id,)).fetchone()[0]
+        res = conn.execute("SELECT COUNT(*) FROM vocab WHERE user_id=?", (user_id,)).fetchone()
+        return res[0] if res else 0
 
 # ─────────────────────────────────────────
 #  LESSON TRACKING
@@ -300,7 +308,7 @@ def mark_lesson_done(user_id: int, lesson_key: str, lang: str, score: int):
         """, (user_id, lesson_key, lang, score, now))
         conn.execute("UPDATE users SET total_lessons=total_lessons+1 WHERE user_id=?", (user_id,))
 
-def get_completed_lessons(user_id: int, lang: str) -> list[str]:
+def get_completed_lessons(user_id: int, lang: str) -> List[str]:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT lesson_key FROM lessons WHERE user_id=? AND lang=?",
@@ -347,7 +355,7 @@ def award_badge(user_id: int, badge_id: str) -> bool:
         except sqlite3.IntegrityError:
             return False
 
-def get_user_badges(user_id: int) -> list[str]:
+def get_user_badges(user_id: int) -> List[str]:
     with get_conn() as conn:
         rows = conn.execute("SELECT badge_id FROM badges WHERE user_id=?", (user_id,)).fetchall()
         return [r["badge_id"] for r in rows]
@@ -364,7 +372,7 @@ def create_duel(challenger_id: int, opponent_id: int, questions: list) -> int:
         """, (challenger_id, opponent_id, json.dumps(questions), now))
         return cur.lastrowid
 
-def get_duel(duel_id: int) -> dict | None:
+def get_duel(duel_id: int) -> Optional[dict]:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM duels WHERE id=?", (duel_id,)).fetchone()
         return dict(row) if row else None
@@ -410,7 +418,7 @@ def join_group(group_id: int, user_id: int):
         except sqlite3.IntegrityError:
             return False
 
-def list_groups() -> list[dict]:
+def list_groups() -> List[dict]:
     with get_conn() as conn:
         rows = conn.execute("""
             SELECT g.*, COUNT(m.user_id) as member_count
@@ -420,7 +428,7 @@ def list_groups() -> list[dict]:
         """).fetchall()
         return [dict(r) for r in rows]
 
-def get_user_groups(user_id: int) -> list[dict]:
+def get_user_groups(user_id: int) -> List[dict]:
     with get_conn() as conn:
         rows = conn.execute("""
             SELECT g.* FROM study_groups g
@@ -441,7 +449,7 @@ def add_custom_lesson(admin_id: int, lang: str, level: str, title: str, content:
         """, (admin_id, lang, level, title, content, now))
         return cur.lastrowid
 
-def get_custom_lessons(lang: str = None, level: str = None) -> list[dict]:
+def get_custom_lessons(lang: str = None, level: str = None) -> List[dict]:
     with get_conn() as conn:
         query = "SELECT * FROM custom_lessons WHERE 1=1"
         params = []
