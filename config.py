@@ -10,17 +10,15 @@ from dotenv import load_dotenv
 from typing import Optional
 
 # line 105 ကို အောက်ပါအတိုင်း ပြင်ပါ
-def resolve_lang(text: str) -> Optional[str]:
-    # ... code ...
 load_dotenv()
 
 # ─────────────────────────────────────────
 #  BOT CORE
-# ─────────────────────────────────────────
+#  ─────────────────────────────────────────
 BOT_TOKEN   = os.getenv("BOT_TOKEN", "")
 ADMIN_IDS   = [int(x) for x in os.getenv("ADMIN_IDS", "0").split(",") if x.strip().isdigit()]
 DB_PATH     = os.getenv("DB_PATH", "super_learning_bot.db")
-TIMEZONE    = os.getenv("TIMEZONE", "Asia/Yangon")
+ TIMEZONE    = os.getenv("TIMEZONE", "Asia/Yangon")
 DAILY_TIME  = os.getenv("DAILY_LESSON_TIME", "08:00")
 REVIEW_TIME = os.getenv("EVENING_REVIEW_TIME", "20:00")
 
@@ -74,12 +72,12 @@ BADGES = {
 }
 
 # ─────────────────────────────────────────
-#  SUPPORTED LANGUAGES
+ #  SUPPORTED LANGUAGES
 # ─────────────────────────────────────────
 SUPPORTED_LANGS = {
     "english"   : {"code": "en", "name": "🇺🇸 English",   "tts_lang": "en"},
     "korean"    : {"code": "ko", "name": "🇰🇷 Korean",    "tts_lang": "ko"},
-    "japanese"  : {"code": "ja", "name": "🇯🇵 Japanese",  "tts_lang": "ja"},
+    "japanese"   : {"code": "ja", "name": "🇯🇵 Japanese",  "tts_lang": "ja"},
     "chinese"   : {"code": "zh-cn", "name": "🇨🇳 Chinese", "tts_lang": "zh"},
     "burmese"   : {"code": "my", "name": "🇲🇲 Burmese",   "tts_lang": "my"},
     "french"    : {"code": "fr", "name": "🇫🇷 French",    "tts_lang": "fr"},
