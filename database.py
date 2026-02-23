@@ -1,629 +1,483 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Database module for SUPER LEARNING BOT
-Handles all database operations using SQLite
+SUPER LEARNING BOT — SQLite Database Layer
+==========================================
+Handles all persistent storage: users, vocab,
+lessons, quiz scores, streaks, badges, duels.
 """
-
 import sqlite3
 import json
-from datetime import datetime, timedelta
-from typing import Optional, Dict, List
-import logging
+import time
+from datetime import datetime, date
+from config import DB_PATH
 
-logger = logging.getLogger(__name__)
+# ─────────────────────────────────────────
+#  CONNECTION HELPER
+# ─────────────────────────────────────────
+def get_conn():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
+# ─────────────────────────────────────────
+#  SCHEMA INIT
+# ─────────────────────────────────────────
+def init_db():
+    with get_conn() as conn:
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id       INTEGER PRIMARY KEY,
+            username      TEXT,
+            full_name     TEXT,
+            lang          TEXT DEFAULT 'english',
+            cefr_level    TEXT DEFAULT 'A1',
+            xp            INTEGER DEFAULT 0,
+            streak        INTEGER DEFAULT 0,
+            last_active   TEXT,
+            daily_goal    INTEGER DEFAULT 15,
+            joined_at     TEXT,
+            is_premium    INTEGER DEFAULT 0,
+            total_lessons INTEGER DEFAULT 0,
+            total_correct INTEGER DEFAULT 0,
+            total_questions INTEGER DEFAULT 0
+        );
 
-class Database:
-    """Database handler class"""
-    
-    def __init__(self, db_path='superlearning.db'):
-        self.db_path = db_path
-        self.init_database()
-    
-    def get_connection(self):
-        """Get database connection"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-    
-    def init_database(self):
-        """Initialize database tables"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Users table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                learning_language TEXT,
-                level TEXT,
-                daily_goal_minutes INTEGER DEFAULT 10,
-                xp INTEGER DEFAULT 0,
-                streak INTEGER DEFAULT 0,
-                last_activity DATE,
-                total_lessons INTEGER DEFAULT 0,
-                total_minutes INTEGER DEFAULT 0,
-                weekly_lessons INTEGER DEFAULT 0,
-                monthly_lessons INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Lessons table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS lessons (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                language TEXT,
-                level TEXT,
-                topic TEXT,
-                content TEXT,
-                vocabulary TEXT,
-                grammar TEXT,
-                audio_url TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # User progress table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_progress (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                lesson_id INTEGER,
-                completed BOOLEAN DEFAULT 0,
-                score INTEGER,
-                time_spent INTEGER,
-                completed_at TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id),
-                FOREIGN KEY (lesson_id) REFERENCES lessons(id)
-            )
-        ''')
-        
-        # Vocabulary table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS vocabulary (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                language TEXT,
-                level TEXT,
-                word TEXT,
-                translation TEXT,
-                pronunciation TEXT,
-                example TEXT,
-                audio_url TEXT
-            )
-        ''')
-        
-        # User vocabulary (saved words)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_vocabulary (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                vocab_id INTEGER,
-                mastery_level INTEGER DEFAULT 0,
-                last_reviewed DATE,
-                next_review DATE,
-                review_count INTEGER DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users(user_id),
-                FOREIGN KEY (vocab_id) REFERENCES vocabulary(id)
-            )
-        ''')
-        
-        # Quizzes table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS quizzes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                language TEXT,
-                level TEXT,
-                quiz_type TEXT,
-                questions TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Quiz results table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS quiz_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                quiz_id INTEGER,
-                score INTEGER,
-                total_questions INTEGER,
-                time_taken INTEGER,
-                completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id),
-                FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
-            )
-        ''')
-        
-        # Badges/Achievements table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS badges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                description TEXT,
-                icon TEXT,
-                requirement TEXT
-            )
-        ''')
-        
-        # User badges
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_badges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                badge_id INTEGER,
-                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id),
-                FOREIGN KEY (badge_id) REFERENCES badges(id)
-            )
-        ''')
-        
-        # AI conversations table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                scenario TEXT,
-                messages TEXT,
-                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                ended_at TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
-            )
-        ''')
-        
-        # Admin users table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS admins (
-                user_id INTEGER PRIMARY KEY,
-                role TEXT DEFAULT 'admin',
-                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        
-        logger.info("Database initialized successfully")
-    
-    # ==================== USER OPERATIONS ====================
-    
-    def create_user(self, user_data: Dict) -> bool:
-        """Create new user"""
+        CREATE TABLE IF NOT EXISTS vocab (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER,
+            word       TEXT,
+            meaning    TEXT,
+            example    TEXT,
+            lang       TEXT,
+            next_review TEXT,
+            ease       REAL DEFAULT 2.5,
+            interval   INTEGER DEFAULT 1,
+            reps       INTEGER DEFAULT 0,
+            added_at   TEXT,
+            UNIQUE(user_id, word, lang)
+        );
+
+        CREATE TABLE IF NOT EXISTS lessons (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER,
+            lesson_key  TEXT,
+            lang        TEXT,
+            completed   INTEGER DEFAULT 0,
+            score       INTEGER DEFAULT 0,
+            completed_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS quiz_sessions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER,
+            q_json     TEXT,
+            ans_json   TEXT,
+            score      INTEGER DEFAULT 0,
+            total      INTEGER DEFAULT 0,
+            mode       TEXT DEFAULT 'quiz',
+            started_at TEXT,
+            ended_at   TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS badges (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id  INTEGER,
+            badge_id TEXT,
+            earned_at TEXT,
+            UNIQUE(user_id, badge_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS duels (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            challenger   INTEGER,
+            opponent     INTEGER,
+            status       TEXT DEFAULT 'pending',
+            winner       INTEGER,
+            created_at   TEXT,
+            q_json       TEXT,
+            c_score      INTEGER DEFAULT 0,
+            o_score      INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS study_groups (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT,
+            owner_id   INTEGER,
+            lang       TEXT,
+            created_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS group_members (
+            group_id INTEGER,
+            user_id  INTEGER,
+            joined_at TEXT,
+            PRIMARY KEY(group_id, user_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS custom_lessons (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id   INTEGER,
+            lang       TEXT,
+            level      TEXT,
+            title      TEXT,
+            content    TEXT,
+            created_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS custom_quizzes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id   INTEGER,
+            lang       TEXT,
+            q_json     TEXT,
+            created_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS user_state (
+            user_id  INTEGER PRIMARY KEY,
+            state    TEXT DEFAULT 'idle',
+            data     TEXT DEFAULT '{}'
+        );
+        """)
+    print("✅ Database initialized.")
+
+# ─────────────────────────────────────────
+#  USER CRUD
+# ─────────────────────────────────────────
+def get_user(user_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+def upsert_user(user_id: int, username: str, full_name: str):
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO users(user_id, username, full_name, joined_at, last_active)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                username=excluded.username,
+                full_name=excluded.full_name,
+                last_active=excluded.last_active
+        """, (user_id, username, full_name, now, now))
+
+def update_user(user_id: int, **kwargs):
+    if not kwargs:
+        return
+    fields = ", ".join(f"{k}=?" for k in kwargs)
+    vals   = list(kwargs.values()) + [user_id]
+    with get_conn() as conn:
+        conn.execute(f"UPDATE users SET {fields} WHERE user_id=?", vals)
+
+def add_xp(user_id: int, amount: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET xp=xp+? WHERE user_id=?", (amount, user_id))
+
+def update_streak(user_id: int):
+    user = get_user(user_id)
+    if not user:
+        return 0
+    today = date.today().isoformat()
+    last  = user.get("last_active", "")[:10]
+    if last == today:
+        return user["streak"]
+    yesterday = (date.today().replace(day=date.today().day - 1)).isoformat()
+    new_streak = (user["streak"] + 1) if last == yesterday else 1
+    update_user(user_id, streak=new_streak, last_active=datetime.now().isoformat())
+    return new_streak
+
+def get_leaderboard(limit=10) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT user_id, full_name, xp, streak FROM users ORDER BY xp DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+def get_all_user_ids() -> list[int]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT user_id FROM users").fetchall()
+        return [r["user_id"] for r in rows]
+
+# ─────────────────────────────────────────
+#  STATE MACHINE
+# ─────────────────────────────────────────
+def get_state(user_id: int) -> tuple[str, dict]:
+    with get_conn() as conn:
+        row = conn.execute("SELECT state, data FROM user_state WHERE user_id=?", (user_id,)).fetchone()
+        if row:
+            return row["state"], json.loads(row["data"])
+        return "idle", {}
+
+def set_state(user_id: int, state: str, data: dict = None):
+    if data is None:
+        data = {}
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO user_state(user_id, state, data) VALUES(?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET state=excluded.state, data=excluded.data
+        """, (user_id, state, json.dumps(data)))
+
+def clear_state(user_id: int):
+    set_state(user_id, "idle", {})
+
+# ─────────────────────────────────────────
+#  VOCAB CRUD
+# ─────────────────────────────────────────
+def save_vocab(user_id: int, word: str, meaning: str, example: str, lang: str):
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO users (user_id, username, learning_language, level, daily_goal_minutes)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (
-                user_data['user_id'],
-                user_data['username'],
-                user_data['learning_language'],
-                user_data['level'],
-                user_data['daily_goal_minutes']
-            ))
-            
-            conn.commit()
-            conn.close()
+            conn.execute("""
+                INSERT INTO vocab(user_id, word, meaning, example, lang, next_review, added_at)
+                VALUES(?,?,?,?,?,?,?)
+            """, (user_id, word, meaning, example, lang, now, now))
             return True
-        except Exception as e:
-            logger.error(f"Error creating user: {e}")
+        except sqlite3.IntegrityError:
             return False
-    
-    def get_user(self, user_id: int) -> Optional[Dict]:
-        """Get user by ID"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
-            row = cursor.fetchone()
-            
-            conn.close()
-            
-            if row:
-                return dict(row)
-            return None
-        except Exception as e:
-            logger.error(f"Error getting user: {e}")
-            return None
-    
-    def update_user(self, user_id: int, updates: Dict) -> bool:
-        """Update user data"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            set_clause = ', '.join([f"{key} = ?" for key in updates.keys()])
-            values = list(updates.values()) + [user_id]
-            
-            cursor.execute(f'''
-                UPDATE users 
-                SET {set_clause}, updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            ''', values)
-            
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            logger.error(f"Error updating user: {e}")
-            return False
-    
-    def update_streak(self, user_id: int) -> int:
-        """Update user streak"""
-        user = self.get_user(user_id)
-        if not user:
-            return 0
-        
-        last_activity = user.get('last_activity')
-        today = datetime.now().date()
-        
-        if last_activity:
-            last_date = datetime.strptime(last_activity, '%Y-%m-%d').date()
-            days_diff = (today - last_date).days
-            
-            if days_diff == 0:
-                # Already active today
-                return user['streak']
-            elif days_diff == 1:
-                # Consecutive day
-                new_streak = user['streak'] + 1
-            else:
-                # Streak broken
-                new_streak = 1
+
+def get_vocab_deck(user_id: int, lang: str = None) -> list[dict]:
+    with get_conn() as conn:
+        if lang:
+            rows = conn.execute(
+                "SELECT * FROM vocab WHERE user_id=? AND lang=? ORDER BY added_at DESC",
+                (user_id, lang)
+            ).fetchall()
         else:
-            new_streak = 1
-        
-        self.update_user(user_id, {
-            'streak': new_streak,
-            'last_activity': today.isoformat()
-        })
-        
-        return new_streak
-    
-    def add_xp(self, user_id: int, xp: int) -> int:
-        """Add XP to user"""
-        user = self.get_user(user_id)
-        if not user:
-            return 0
-        
-        new_xp = user['xp'] + xp
-        self.update_user(user_id, {'xp': new_xp})
-        
-        return new_xp
-    
-    def get_user_stats(self, user_id: int) -> Dict:
-        """Get user statistics"""
+            rows = conn.execute(
+                "SELECT * FROM vocab WHERE user_id=? ORDER BY added_at DESC",
+                (user_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+def get_due_reviews(user_id: int) -> list[dict]:
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM vocab WHERE user_id=? AND next_review<=? ORDER BY next_review LIMIT 20",
+            (user_id, now)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+def update_vocab_sm2(vocab_id: int, quality: int):
+    """SM-2 spaced repetition algorithm."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM vocab WHERE id=?", (vocab_id,)).fetchone()
+        if not row:
+            return
+        ease     = row["ease"]
+        interval = row["interval"]
+        reps     = row["reps"]
+        if quality >= 3:
+            if reps == 0:   interval = 1
+            elif reps == 1: interval = 6
+            else:           interval = round(interval * ease)
+            ease = ease + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)
+            ease = max(1.3, ease)
+            reps += 1
+        else:
+            interval = 1
+            reps     = 0
+        import datetime as dt
+        next_rev = (dt.datetime.now() + dt.timedelta(days=interval)).isoformat()
+        conn.execute(
+            "UPDATE vocab SET ease=?, interval=?, reps=?, next_review=? WHERE id=?",
+            (ease, interval, reps, next_rev, vocab_id)
+        )
+
+def count_vocab(user_id: int) -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) FROM vocab WHERE user_id=?", (user_id,)).fetchone()[0]
+
+# ─────────────────────────────────────────
+#  LESSON TRACKING
+# ─────────────────────────────────────────
+def mark_lesson_done(user_id: int, lesson_key: str, lang: str, score: int):
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        conn.execute("""
+            INSERT INTO lessons(user_id, lesson_key, lang, completed, score, completed_at)
+            VALUES(?,?,?,1,?,?)
+        """, (user_id, lesson_key, lang, score, now))
+        conn.execute("UPDATE users SET total_lessons=total_lessons+1 WHERE user_id=?", (user_id,))
+
+def get_completed_lessons(user_id: int, lang: str) -> list[str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT lesson_key FROM lessons WHERE user_id=? AND lang=?",
+            (user_id, lang)
+        ).fetchall()
+        return [r["lesson_key"] for r in rows]
+
+# ─────────────────────────────────────────
+#  QUIZ SESSION
+# ─────────────────────────────────────────
+def start_quiz_session(user_id: int, questions: list, mode: str = "quiz") -> int:
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        cur = conn.execute("""
+            INSERT INTO quiz_sessions(user_id, q_json, ans_json, mode, started_at)
+            VALUES(?,?,?,?,?)
+        """, (user_id, json.dumps(questions), json.dumps([]), mode, now))
+        return cur.lastrowid
+
+def update_quiz_session(session_id: int, score: int, total: int, answers: list):
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE quiz_sessions SET score=?, total=?, ans_json=?, ended_at=? WHERE id=?",
+            (score, total, json.dumps(answers), now, session_id)
+        )
+        conn.execute(
+            "UPDATE users SET total_correct=total_correct+?, total_questions=total_questions+? WHERE user_id=(SELECT user_id FROM quiz_sessions WHERE id=?)",
+            (score, total, session_id)
+        )
+
+# ─────────────────────────────────────────
+#  BADGES
+# ─────────────────────────────────────────
+def award_badge(user_id: int, badge_id: str) -> bool:
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # Get quiz accuracy
-            cursor.execute('''
-                SELECT AVG(CAST(score AS FLOAT) / total_questions * 100) as accuracy
-                FROM quiz_results
-                WHERE user_id = ?
-            ''', (user_id,))
-            
-            accuracy_row = cursor.fetchone()
-            accuracy = round(accuracy_row['accuracy'], 2) if accuracy_row['accuracy'] else 0
-            
-            # Get badge count
-            cursor.execute('''
-                SELECT COUNT(*) as badge_count
-                FROM user_badges
-                WHERE user_id = ?
-            ''', (user_id,))
-            
-            badge_row = cursor.fetchone()
-            badge_count = badge_row['badge_count']
-            
-            conn.close()
-            
-            return {
-                'accuracy': accuracy,
-                'badge_count': badge_count
-            }
-        except Exception as e:
-            logger.error(f"Error getting user stats: {e}")
-            return {'accuracy': 0, 'badge_count': 0}
-    
-    # ==================== LESSON OPERATIONS ====================
-    
-    def create_lesson(self, lesson_data: Dict) -> Optional[int]:
-        """Create new lesson"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO lessons (language, level, topic, content, vocabulary, grammar, audio_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                lesson_data['language'],
-                lesson_data['level'],
-                lesson_data['topic'],
-                json.dumps(lesson_data['content']),
-                json.dumps(lesson_data['vocabulary']),
-                json.dumps(lesson_data['grammar']),
-                lesson_data.get('audio_url', '')
-            ))
-            
-            lesson_id = cursor.lastrowid
-            
-            conn.commit()
-            conn.close()
-            
-            return lesson_id
-        except Exception as e:
-            logger.error(f"Error creating lesson: {e}")
-            return None
-    
-    def get_lesson(self, lesson_id: int) -> Optional[Dict]:
-        """Get lesson by ID"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT * FROM lessons WHERE id = ?', (lesson_id,))
-            row = cursor.fetchone()
-            
-            conn.close()
-            
-            if row:
-                lesson = dict(row)
-                lesson['content'] = json.loads(lesson['content'])
-                lesson['vocabulary'] = json.loads(lesson['vocabulary'])
-                lesson['grammar'] = json.loads(lesson['grammar'])
-                return lesson
-            return None
-        except Exception as e:
-            logger.error(f"Error getting lesson: {e}")
-            return None
-    
-    def get_lessons_by_level(self, language: str, level: str, limit: int = 10) -> List[Dict]:
-        """Get lessons by language and level"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                SELECT * FROM lessons 
-                WHERE language = ? AND level = ?
-                ORDER BY created_at DESC
-                LIMIT ?
-            ''', (language, level, limit))
-            
-            rows = cursor.fetchall()
-            conn.close()
-            
-            lessons = []
-            for row in rows:
-                lesson = dict(row)
-                lesson['content'] = json.loads(lesson['content'])
-                lesson['vocabulary'] = json.loads(lesson['vocabulary'])
-                lesson['grammar'] = json.loads(lesson['grammar'])
-                lessons.append(lesson)
-            
-            return lessons
-        except Exception as e:
-            logger.error(f"Error getting lessons: {e}")
-            return []
-    
-    # ==================== VOCABULARY OPERATIONS ====================
-    
-    def add_vocabulary(self, vocab_data: Dict) -> Optional[int]:
-        """Add vocabulary word"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO vocabulary (language, level, word, translation, pronunciation, example, audio_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                vocab_data['language'],
-                vocab_data['level'],
-                vocab_data['word'],
-                vocab_data['translation'],
-                vocab_data['pronunciation'],
-                vocab_data['example'],
-                vocab_data.get('audio_url', '')
-            ))
-            
-            vocab_id = cursor.lastrowid
-            
-            conn.commit()
-            conn.close()
-            
-            return vocab_id
-        except Exception as e:
-            logger.error(f"Error adding vocabulary: {e}")
-            return None
-    
-    def get_vocabulary(self, language: str, level: str, limit: int = 10) -> List[Dict]:
-        """Get vocabulary words"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                SELECT * FROM vocabulary 
-                WHERE language = ? AND level = ?
-                ORDER BY RANDOM()
-                LIMIT ?
-            ''', (language, level, limit))
-            
-            rows = cursor.fetchall()
-            conn.close()
-            
-            return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting vocabulary: {e}")
-            return []
-    
-    def save_user_vocabulary(self, user_id: int, vocab_id: int) -> bool:
-        """Save vocabulary to user's deck"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # Check if already saved
-            cursor.execute('''
-                SELECT id FROM user_vocabulary 
-                WHERE user_id = ? AND vocab_id = ?
-            ''', (user_id, vocab_id))
-            
-            if cursor.fetchone():
-                conn.close()
-                return True
-            
-            # Calculate next review date (1 day from now)
-            next_review = (datetime.now() + timedelta(days=1)).date().isoformat()
-            
-            cursor.execute('''
-                INSERT INTO user_vocabulary (user_id, vocab_id, next_review)
-                VALUES (?, ?, ?)
-            ''', (user_id, vocab_id, next_review))
-            
-            conn.commit()
-            conn.close()
-            
+            conn.execute(
+                "INSERT INTO badges(user_id, badge_id, earned_at) VALUES(?,?,?)",
+                (user_id, badge_id, now)
+            )
             return True
-        except Exception as e:
-            logger.error(f"Error saving user vocabulary: {e}")
+        except sqlite3.IntegrityError:
             return False
-    
-    # ==================== QUIZ OPERATIONS ====================
-    
-    def create_quiz(self, quiz_data: Dict) -> Optional[int]:
-        """Create new quiz"""
+
+def get_user_badges(user_id: int) -> list[str]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT badge_id FROM badges WHERE user_id=?", (user_id,)).fetchall()
+        return [r["badge_id"] for r in rows]
+
+# ─────────────────────────────────────────
+#  DUELS
+# ─────────────────────────────────────────
+def create_duel(challenger_id: int, opponent_id: int, questions: list) -> int:
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        cur = conn.execute("""
+            INSERT INTO duels(challenger, opponent, q_json, created_at)
+            VALUES(?,?,?,?)
+        """, (challenger_id, opponent_id, json.dumps(questions), now))
+        return cur.lastrowid
+
+def get_duel(duel_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM duels WHERE id=?", (duel_id,)).fetchone()
+        return dict(row) if row else None
+
+def update_duel_score(duel_id: int, player: str, score: int):
+    field = "c_score" if player == "challenger" else "o_score"
+    with get_conn() as conn:
+        conn.execute(f"UPDATE duels SET {field}=? WHERE id=?", (score, duel_id))
+
+def finish_duel(duel_id: int, winner_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE duels SET status='done', winner=? WHERE id=?",
+            (winner_id, duel_id)
+        )
+
+# ─────────────────────────────────────────
+#  STUDY GROUPS
+# ─────────────────────────────────────────
+def create_group(name: str, owner_id: int, lang: str) -> int:
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO study_groups(name, owner_id, lang, created_at) VALUES(?,?,?,?)",
+            (name, owner_id, lang, now)
+        )
+        gid = cur.lastrowid
+        conn.execute(
+            "INSERT INTO group_members(group_id, user_id, joined_at) VALUES(?,?,?)",
+            (gid, owner_id, now)
+        )
+        return gid
+
+def join_group(group_id: int, user_id: int):
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO quizzes (language, level, quiz_type, questions)
-                VALUES (?, ?, ?, ?)
-            ''', (
-                quiz_data['language'],
-                quiz_data['level'],
-                quiz_data['quiz_type'],
-                json.dumps(quiz_data['questions'])
-            ))
-            
-            quiz_id = cursor.lastrowid
-            
-            conn.commit()
-            conn.close()
-            
-            return quiz_id
-        except Exception as e:
-            logger.error(f"Error creating quiz: {e}")
-            return None
-    
-    def save_quiz_result(self, user_id: int, quiz_id: int, score: int, total: int, time_taken: int) -> bool:
-        """Save quiz result"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT INTO quiz_results (user_id, quiz_id, score, total_questions, time_taken)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (user_id, quiz_id, score, total, time_taken))
-            
-            conn.commit()
-            conn.close()
-            
+            conn.execute(
+                "INSERT INTO group_members(group_id, user_id, joined_at) VALUES(?,?,?)",
+                (group_id, user_id, now)
+            )
             return True
-        except Exception as e:
-            logger.error(f"Error saving quiz result: {e}")
+        except sqlite3.IntegrityError:
             return False
-    
-    # ==================== ADMIN OPERATIONS ====================
-    
-    def is_admin(self, user_id: int) -> bool:
-        """Check if user is admin"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT user_id FROM admins WHERE user_id = ?', (user_id,))
-            result = cursor.fetchone()
-            
-            conn.close()
-            
-            return result is not None
-        except Exception as e:
-            logger.error(f"Error checking admin: {e}")
-            return False
-    
-    def get_platform_stats(self) -> Dict:
-        """Get platform-wide statistics"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            # Total users
-            cursor.execute('SELECT COUNT(*) as total FROM users')
-            total_users = cursor.fetchone()['total']
-            
-            # Active today
-            today = datetime.now().date().isoformat()
-            cursor.execute('SELECT COUNT(*) as active FROM users WHERE last_activity = ?', (today,))
-            active_today = cursor.fetchone()['active']
-            
-            # Total lessons completed
-            cursor.execute('SELECT COUNT(*) as total FROM user_progress WHERE completed = 1')
-            total_lessons = cursor.fetchone()['total']
-            
-            # Total quizzes
-            cursor.execute('SELECT COUNT(*) as total FROM quiz_results')
-            total_quizzes = cursor.fetchone()['total']
-            
-            # Total conversations
-            cursor.execute('SELECT COUNT(*) as total FROM conversations')
-            total_conversations = cursor.fetchone()['total']
-            
-            # Calculate retention (users active in last 7 days)
-            week_ago = (datetime.now() - timedelta(days=7)).date().isoformat()
-            cursor.execute('SELECT COUNT(*) as active FROM users WHERE last_activity >= ?', (week_ago,))
-            active_week = cursor.fetchone()['active']
-            
-            retention_rate = round((active_week / total_users * 100), 2) if total_users > 0 else 0
-            
-            conn.close()
-            
-            return {
-                'total_users': total_users,
-                'active_today': active_today,
-                'total_lessons': total_lessons,
-                'total_quizzes': total_quizzes,
-                'total_conversations': total_conversations,
-                'retention_rate': retention_rate
-            }
-        except Exception as e:
-            logger.error(f"Error getting platform stats: {e}")
-            return {}
-    
-    def get_all_users(self) -> List[Dict]:
-        """Get all users (for broadcasting)"""
-        try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT user_id, username FROM users')
-            rows = cursor.fetchall()
-            
-            conn.close()
-            
-            return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error getting all users: {e}")
-            return []
+
+def list_groups() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT g.*, COUNT(m.user_id) as member_count
+            FROM study_groups g
+            LEFT JOIN group_members m ON g.id=m.group_id
+            GROUP BY g.id ORDER BY member_count DESC LIMIT 20
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+def get_user_groups(user_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT g.* FROM study_groups g
+            JOIN group_members m ON g.id=m.group_id
+            WHERE m.user_id=?
+        """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+# ─────────────────────────────────────────
+#  ADMIN: CUSTOM CONTENT
+# ─────────────────────────────────────────
+def add_custom_lesson(admin_id: int, lang: str, level: str, title: str, content: str) -> int:
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        cur = conn.execute("""
+            INSERT INTO custom_lessons(admin_id, lang, level, title, content, created_at)
+            VALUES(?,?,?,?,?,?)
+        """, (admin_id, lang, level, title, content, now))
+        return cur.lastrowid
+
+def get_custom_lessons(lang: str = None, level: str = None) -> list[dict]:
+    with get_conn() as conn:
+        query = "SELECT * FROM custom_lessons WHERE 1=1"
+        params = []
+        if lang:
+            query += " AND lang=?"; params.append(lang)
+        if level:
+            query += " AND level=?"; params.append(level)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+def add_custom_quiz(admin_id: int, lang: str, questions: list) -> int:
+    now = datetime.now().isoformat()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO custom_quizzes(admin_id, lang, q_json, created_at) VALUES(?,?,?,?)",
+            (admin_id, lang, json.dumps(questions), now)
+        )
+        return cur.lastrowid
+
+# ─────────────────────────────────────────
+#  STATS FOR ADMIN
+# ─────────────────────────────────────────
+def get_global_stats() -> dict:
+    with get_conn() as conn:
+        total_users    = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        active_today   = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE last_active>=?",
+            (date.today().isoformat(),)
+        ).fetchone()[0]
+        total_lessons  = conn.execute("SELECT SUM(total_lessons) FROM users").fetchone()[0] or 0
+        total_vocab    = conn.execute("SELECT COUNT(*) FROM vocab").fetchone()[0]
+        premium_users  = conn.execute("SELECT COUNT(*) FROM users WHERE is_premium=1").fetchone()[0]
+        return {
+            "total_users"  : total_users,
+            "active_today" : active_today,
+            "total_lessons": total_lessons,
+            "total_vocab"  : total_vocab,
+            "premium_users": premium_users,
+        }
