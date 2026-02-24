@@ -1,182 +1,180 @@
 """
-╔══════════════════════════════════════════════════════════════╗
-║          🌍 SUPER LEARNING BOT — Main Entry Point           ║
-║                   Create by : PINLON-YOUTH                   ║
-╚══════════════════════════════════════════════════════════════╝
-
-REQUIREMENTS:
-  - Python 3.11+
-  - pip install -r requirements.txt
-  - Edit .env: set BOT_TOKEN and ADMIN_IDS
-
-RUN:
-  python bot.py
+Language Learning Ecosystem Telegram Bot
+Main Entry Point
 """
-
+import os
 import logging
 import asyncio
-from telegram import Update, BotCommand
+from datetime import datetime, timedelta
+from telegram import Update
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, filters
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+    ContextTypes
 )
-from config import BOT_TOKEN
-import database as db
 
-# ─────────────────────────────────────────
-#  LOGGING
-# ─────────────────────────────────────────
+from handlers.start_handler import StartHandler
+from handlers.lesson_handler import LessonHandler
+from handlers.quiz_handler import QuizHandler
+from handlers.profile_handler import ProfileHandler
+from handlers.leaderboard_handler import LeaderboardHandler
+from handlers.admin_handler import AdminHandler
+from managers.database_manager import DatabaseManager
+from managers.user_manager import UserManager
+from managers.notification_manager import NotificationManager
+from utils.error_handler import error_handler
+from config import Config
+
+# Configure logging
 logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────
-#  IMPORT HANDLERS
-# ─────────────────────────────────────────
-from user_handlers import (
-    cmd_start, cmd_lang, cmd_profile, cmd_learn, cmd_lesson,
-    cmd_path, cmd_review, cmd_vocab, cmd_deck, cmd_save, cmd_flash,
-    cmd_say, cmd_listen, cmd_repeat, cmd_tutor, cmd_roleplay, cmd_correct,
-    cmd_quiz, cmd_challenge, cmd_exam, cmd_tops, cmd_progress, cmd_streak,
-    cmd_badges, cmd_goal, cmd_studygroup, cmd_duel, cmd_share,
-    cmd_translate, cmd_report, cmd_help
-)
-from admin_handlers import (
-    cmd_admin_stats, cmd_admin_leaderboard, cmd_broadcast,
-    cmd_edlesson, cmd_edvocab, cmd_edquiz, cmd_edpath, cmd_edaudio,
-    cmd_roles, cmd_set, cmd_backup, cmd_restore, cmd_resetuser
-)
-from callback_handlers import handle_callback, handle_message
 
-# ─────────────────────────────────────────
-#  BOT COMMANDS MENU (shown in Telegram)
-# ─────────────────────────────────────────
-USER_COMMANDS = [
-    BotCommand("start",       "🌍 Welcome & main menu"),
-    BotCommand("lang",        "🌐 Change learning language"),
-    BotCommand("profile",     "👤 Your stats & level"),
-    BotCommand("learn",       "📚 Today's lesson"),
-    BotCommand("lesson",      "📖 Specific lesson topic"),
-    BotCommand("path",        "🗺️ Learning roadmap"),
-    BotCommand("review",      "🔄 Spaced repetition review"),
-    BotCommand("vocab",       "🔤 Daily vocabulary words"),
-    BotCommand("deck",        "🗂️ Your saved words"),
-    BotCommand("save",        "💾 Save a word to deck"),
-    BotCommand("flash",       "🃏 Flashcard mode"),
-    BotCommand("say",         "🔊 Hear pronunciation (TTS)"),
-    BotCommand("listen",      "🎧 Listening exercise"),
-    BotCommand("repeat",      "🔁 Shadowing practice"),
-    BotCommand("tutor",       "💬 AI conversation tutor"),
-    BotCommand("roleplay",    "🎭 Roleplay scenarios"),
-    BotCommand("correct",     "✏️ Grammar check"),
-    BotCommand("quiz",        "🧪 Random quiz"),
-    BotCommand("challenge",   "⚡ Timed challenge"),
-    BotCommand("exam",        "📝 Level test exam"),
-    BotCommand("tops",        "🏆 Leaderboard"),
-    BotCommand("progress",    "📊 Progress chart"),
-    BotCommand("streak",      "🔥 Daily streak"),
-    BotCommand("badges",      "🏅 Your achievements"),
-    BotCommand("goal",        "🎯 Set daily goal"),
-    BotCommand("studygroup",  "👥 Study groups"),
-    BotCommand("duel",        "⚔️ Quiz duel battle"),
-    BotCommand("share",       "🃏 Share progress card"),
-    BotCommand("translate",   "🌐 Quick translation"),
-    BotCommand("report",      "📨 Send feedback"),
-    BotCommand("help",        "❓ Smart help menu"),
-]
+class LanguageLearningBot:
+    """Main bot class orchestrating all components"""
+    
+    def __init__(self):
+        self.config = Config()
+        self.db_manager = None
+        self.user_manager = None
+        self.notification_manager = None
+        
+    async def initialize(self):
+        """Initialize database and managers"""
+        self.db_manager = DatabaseManager(self.config.DB_PATH)
+        await self.db_manager.initialize()
+        
+        self.user_manager = UserManager(self.db_manager)
+        self.notification_manager = NotificationManager(self.user_manager)
+        
+        logger.info("✅ Bot initialized successfully")
+    
+    async def setup_handlers(self, application: Application):
+        """Register all command and callback handlers"""
+        
+        # Initialize handlers
+        start_handler = StartHandler(self.user_manager)
+        lesson_handler = LessonHandler(self.user_manager)
+        quiz_handler = QuizHandler(self.user_manager)
+        profile_handler = ProfileHandler(self.user_manager)
+        leaderboard_handler = LeaderboardHandler(self.user_manager)
+        admin_handler = AdminHandler(self.user_manager, self.config)
+        
+        # Command handlers
+        application.add_handler(CommandHandler("start", start_handler.start))
+        application.add_handler(CommandHandler("help", start_handler.help_command))
+        application.add_handler(CommandHandler("learn", lesson_handler.learn_menu))
+        application.add_handler(CommandHandler("profile", profile_handler.show_profile))
+        application.add_handler(CommandHandler("top", leaderboard_handler.show_leaderboard))
+        application.add_handler(CommandHandler("backup", admin_handler.backup_db))
+        application.add_handler(CommandHandler("restore", admin_handler.restore_db))
+        
+        # Callback query handlers
+        application.add_handler(CallbackQueryHandler(
+            lesson_handler.handle_language_selection,
+            pattern="^lang_"
+        ))
+        application.add_handler(CallbackQueryHandler(
+            lesson_handler.handle_unit_selection,
+            pattern="^unit_"
+        ))
+        application.add_handler(CallbackQueryHandler(
+            lesson_handler.handle_lesson_selection,
+            pattern="^lesson_"
+        ))
+        application.add_handler(CallbackQueryHandler(
+            quiz_handler.handle_quiz_start,
+            pattern="^quiz_"
+        ))
+        application.add_handler(CallbackQueryHandler(
+            quiz_handler.handle_answer,
+            pattern="^answer_"
+        ))
+        application.add_handler(CallbackQueryHandler(
+            profile_handler.handle_profile_actions,
+            pattern="^profile_"
+        ))
+        application.add_handler(CallbackQueryHandler(
+            start_handler.handle_main_menu,
+            pattern="^menu_"
+        ))
+        
+        # Message handler for text input (translation practice)
+        application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            quiz_handler.handle_text_answer
+        ))
+        
+        # Error handler
+        application.add_error_handler(error_handler)
+        
+        logger.info("✅ All handlers registered")
+    
+    async def setup_jobs(self, application: Application):
+        """Setup periodic jobs for notifications and maintenance"""
+        job_queue = application.job_queue
+        
+        # Check for inactive users every hour
+        job_queue.run_repeating(
+            self.notification_manager.check_inactive_users,
+            interval=timedelta(hours=1),
+            first=timedelta(seconds=10)
+        )
+        
+        # Daily cleanup job (midnight UTC)
+        job_queue.run_daily(
+            self.daily_maintenance,
+            time=datetime.strptime("00:00", "%H:%M").time()
+        )
+        
+        logger.info("✅ Job queue configured")
+    
+    async def daily_maintenance(self, context: ContextTypes.DEFAULT_TYPE):
+        """Daily maintenance tasks"""
+        try:
+            # Reset daily challenges, update streaks, etc.
+            await self.user_manager.reset_hearts_for_all()
+            logger.info("✅ Daily maintenance completed")
+        except Exception as e:
+            logger.error(f"❌ Daily maintenance failed: {e}")
+    
+    async def run(self):
+        """Start the bot"""
+        try:
+            # Initialize bot components
+            await self.initialize()
+            
+            # Build application
+            application = (
+                Application.builder()
+                .token(self.config.BOT_TOKEN)
+                .build()
+            )
+            
+            # Setup handlers and jobs
+            await self.setup_handlers(application)
+            await self.setup_jobs(application)
+            
+            # Start bot
+            logger.info("🚀 Starting Language Learning Bot...")
+            await application.run_polling(allowed_updates=Update.ALL_TYPES)
+            
+        except Exception as e:
+            logger.error(f"❌ Fatal error: {e}")
+            raise
 
-# ─────────────────────────────────────────
-#  MAIN
-# ─────────────────────────────────────────
+
 def main():
-    if not BOT_TOKEN or BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-        print("❌ ERROR: Please set BOT_TOKEN in your .env file!")
-        print("   Get your token from @BotFather on Telegram")
-        return
+    """Entry point"""
+    bot = LanguageLearningBot()
+    asyncio.run(bot.run())
 
-    # Init database
-    db.init_db()
-
-    # Build application
-    app = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .build()
-    )
-
-    # ── Register User Command Handlers ─────────
-    app.add_handler(CommandHandler("start",       cmd_start))
-    app.add_handler(CommandHandler("lang",        cmd_lang))
-    app.add_handler(CommandHandler("profile",     cmd_profile))
-    app.add_handler(CommandHandler("learn",       cmd_learn))
-    app.add_handler(CommandHandler("lesson",      cmd_lesson))
-    app.add_handler(CommandHandler("path",        cmd_path))
-    app.add_handler(CommandHandler("review",      cmd_review))
-    app.add_handler(CommandHandler("vocab",       cmd_vocab))
-    app.add_handler(CommandHandler("deck",        cmd_deck))
-    app.add_handler(CommandHandler("save",        cmd_save))
-    app.add_handler(CommandHandler("flash",       cmd_flash))
-    app.add_handler(CommandHandler("say",         cmd_say))
-    app.add_handler(CommandHandler("listen",      cmd_listen))
-    app.add_handler(CommandHandler("repeat",      cmd_repeat))
-    app.add_handler(CommandHandler("tutor",       cmd_tutor))
-    app.add_handler(CommandHandler("roleplay",    cmd_roleplay))
-    app.add_handler(CommandHandler("correct",     cmd_correct))
-    app.add_handler(CommandHandler("quiz",        cmd_quiz))
-    app.add_handler(CommandHandler("challenge",   cmd_challenge))
-    app.add_handler(CommandHandler("exam",        cmd_exam))
-    app.add_handler(CommandHandler("tops",        cmd_tops))
-    app.add_handler(CommandHandler("progress",    cmd_progress))
-    app.add_handler(CommandHandler("streak",      cmd_streak))
-    app.add_handler(CommandHandler("badges",      cmd_badges))
-    app.add_handler(CommandHandler("goal",        cmd_goal))
-    app.add_handler(CommandHandler("studygroup",  cmd_studygroup))
-    app.add_handler(CommandHandler("duel",        cmd_duel))
-    app.add_handler(CommandHandler("share",       cmd_share))
-    app.add_handler(CommandHandler("translate",   cmd_translate))
-    app.add_handler(CommandHandler("report",      cmd_report))
-    app.add_handler(CommandHandler("help",        cmd_help))
-
-    # ── Register Admin Command Handlers ────────
-    app.add_handler(CommandHandler("stats",       cmd_admin_stats))
-    app.add_handler(CommandHandler("leaderboard", cmd_admin_leaderboard))
-    app.add_handler(CommandHandler("broadcast",   cmd_broadcast))
-    app.add_handler(CommandHandler("edlesson",    cmd_edlesson))
-    app.add_handler(CommandHandler("edvocab",     cmd_edvocab))
-    app.add_handler(CommandHandler("edquiz",      cmd_edquiz))
-    app.add_handler(CommandHandler("edpath",      cmd_edpath))
-    app.add_handler(CommandHandler("edaudio",     cmd_edaudio))
-    app.add_handler(CommandHandler("roles",       cmd_roles))
-    app.add_handler(CommandHandler("set",         cmd_set))
-    app.add_handler(CommandHandler("backup",      cmd_backup))
-    app.add_handler(CommandHandler("restore",     cmd_restore))
-    app.add_handler(CommandHandler("resetuser",   cmd_resetuser))
-
-    # ── Callback & Message Handlers ────────────
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # ── Post-init: set commands menu & scheduler
-    async def post_init(application: Application):
-        await application.bot.set_my_commands(USER_COMMANDS)
-        from scheduler import setup_scheduler
-        setup_scheduler(application)
-        info = await application.bot.get_me()
-        print(f"\n{'='*50}")
-        print(f"  🌍 SUPER LEARNING BOT")
-        print(f"  Bot: @{info.username} ({info.full_name})")
-        print(f"  Status: ✅ Running")
-        print(f"  Create by: PINLON-YOUTH")
-        print(f"{'='*50}\n")
-
-    app.post_init = post_init
-
-    # ── Run ────────────────────────────────────
-    print("🚀 Starting SUPER LEARNING BOT...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
